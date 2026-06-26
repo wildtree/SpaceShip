@@ -338,6 +338,9 @@ typedef struct {
     int      ship_sel;      // 機体選択カーソル
     int      ranking_mode_idx;  // ランキング表示モードのインデックス (0-2)
     int      collision_warning; // 衝突予測警告フラグ
+    int      fuel_warning;      // 燃料残量警告 (≤30%)
+    int      time_warning;      // 残り時間警告 (≤10s)
+    int      countdown_last_n;  // 最後にpipを鳴らしたカウント値
 } GameState;
 
 // ==================== オーディオ ====================
@@ -345,8 +348,15 @@ static SDL_AudioStream *g_thruster_stream = NULL;
 static float            g_noise_lpf       = 0.0f;
 
 static SDL_AudioStream *g_warning_stream  = NULL;
-static float            g_warn_sine_phase = 0.0f; // サイン波の位相
-static float            g_warn_mod_phase  = 0.0f; // AM変調の位相
+static float            g_warn_sine_phase = 0.0f;
+static float            g_warn_mod_phase  = 0.0f;
+
+static SDL_AudioStream *g_status_stream   = NULL;  // 燃料/時間警告
+static float            g_stat_sine_phase = 0.0f;
+static float            g_stat_mod_phase  = 0.0f;
+static int              g_stat_prev_level = 0;
+
+static SDL_AudioStream *g_countdown_stream = NULL; // カウントダウン効果音
 
 static void audio_init(void) {
     if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return;
@@ -357,6 +367,12 @@ static void audio_init(void) {
     g_warning_stream = SDL_OpenAudioDeviceStream(
         SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
     if (g_warning_stream) SDL_ResumeAudioStreamDevice(g_warning_stream);
+    g_status_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (g_status_stream) SDL_ResumeAudioStreamDevice(g_status_stream);
+    g_countdown_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (g_countdown_stream) SDL_ResumeAudioStreamDevice(g_countdown_stream);
 }
 
 static void audio_thruster(int on) {
@@ -420,6 +436,40 @@ static void audio_warning_tone(int on) {
     }
 }
 
+// level: 0=オフ, 1=燃料警告(440Hz/2Hz), 2=時間警告(1100Hz/6Hz)
+static void audio_status_warning(int level) {
+    if (!g_status_stream) return;
+    if (level != g_stat_prev_level) {
+        SDL_ClearAudioStream(g_status_stream);
+        g_stat_sine_phase = 0.0f;
+        g_stat_mod_phase  = 0.0f;
+        g_stat_prev_level = level;
+    }
+    if (level == 0) return;
+    const int   SR     = 22050;
+    float freq  = (level == 2) ? 1100.0f : 440.0f;
+    float mfreq = (level == 2) ?    6.0f :   2.0f;
+    const int TARGET = (int)(SR * 0.08f) * (int)sizeof(float);
+    int queued = SDL_GetAudioStreamQueued(g_status_stream);
+    if (queued >= TARGET) return;
+    int n = (TARGET - queued) / (int)sizeof(float);
+    float buf[1024];
+    while (n > 0) {
+        int batch = n < 1024 ? n : 1024;
+        for (int i = 0; i < batch; i++) {
+            float s = sinf(g_stat_sine_phase * 2.0f * (float)M_PI);
+            g_stat_sine_phase += freq / SR;
+            if (g_stat_sine_phase >= 1.0f) g_stat_sine_phase -= 1.0f;
+            float mod = (g_stat_mod_phase < 0.5f) ? 1.0f : 0.0f;
+            g_stat_mod_phase += mfreq / SR;
+            if (g_stat_mod_phase >= 1.0f) g_stat_mod_phase -= 1.0f;
+            buf[i] = s * mod * 0.3f;
+        }
+        SDL_PutAudioStreamData(g_status_stream, buf, batch * (int)sizeof(float));
+        n -= batch;
+    }
+}
+
 static void audio_cleanup(void) {
     if (g_thruster_stream) {
         SDL_DestroyAudioStream(g_thruster_stream);
@@ -429,6 +479,48 @@ static void audio_cleanup(void) {
         SDL_DestroyAudioStream(g_warning_stream);
         g_warning_stream = NULL;
     }
+    if (g_status_stream) {
+        SDL_DestroyAudioStream(g_status_stream);
+        g_status_stream = NULL;
+    }
+    if (g_countdown_stream) {
+        SDL_DestroyAudioStream(g_countdown_stream);
+        g_countdown_stream = NULL;
+    }
+}
+
+// サイン波（倍音付き可）を減衰エンベロープ付きでストリームに追加
+// decay_rate: 指数減衰の速さ (大きいほど短い)
+// harm_ratio: 第2倍音の音量比 (0=なし)
+static void audio_push_tone(float freq, float dur, float vol,
+                             float decay_rate, float harm_ratio) {
+    if (!g_countdown_stream) return;
+    const int SR = 22050;
+    int total = (int)(SR * dur);
+    float buf[512];
+    for (int pushed = 0; pushed < total; ) {
+        int batch = total - pushed;
+        if (batch > 512) batch = 512;
+        for (int i = 0; i < batch; i++) {
+            float t   = (float)(pushed + i) / SR;
+            float env = expf(-decay_rate * t);
+            float s   = sinf(t * freq * 2.0f * (float)M_PI)
+                      + harm_ratio * sinf(t * freq * 4.0f * (float)M_PI);
+            buf[i] = s * env * vol;
+        }
+        SDL_PutAudioStreamData(g_countdown_stream, buf, batch * (int)sizeof(float));
+        pushed += batch;
+    }
+}
+
+// ぴっ: 1100Hz 100ms 高速減衰
+static void audio_play_pip(void) {
+    audio_push_tone(1100.0f, 0.10f, 0.55f, 18.0f, 0.0f);
+}
+
+// ポーン: 550Hz 700ms ゆっくり減衰 + 1100Hz 倍音
+static void audio_play_gong(void) {
+    audio_push_tone(550.0f, 0.70f, 0.60f, 3.5f, 0.25f);
 }
 
 // ==================== ゲーム状態 ====================
@@ -1324,14 +1416,29 @@ static void render_hud(GameState *gs, int w, int h) {
         draw_string(fw*0.5f - 55, ry + 150, rscw, rsch, "HIT ANY KEY");
     }
 
-    // ---- 衝突警告 (PLAYING中のみ) ----
-    if (gs->state == STATE_PLAYING && gs->collision_warning) {
-        // 5Hzで点滅 (200ms周期)
-        if ((SDL_GetTicks() / 200) % 2 == 0) {
-            float pulse = 0.7f + 0.3f * sinf((float)SDL_GetTicks() * 0.01f);
-            glColor3f(1.0f, pulse * 0.1f, 0.0f);
-            // "DANGER" を画面上部中央に大きく
+    // ---- 警告表示 (PLAYING中のみ) ----
+    if (gs->state == STATE_PLAYING) {
+        Uint64 tick = SDL_GetTicks();
+
+        // 衝突警告: 中央上部 (5Hz点滅)
+        if (gs->collision_warning && (tick / 200) % 2 == 0) {
+            float p = 0.7f + 0.3f * sinf((float)tick * 0.01f);
+            glColor3f(1.0f, p * 0.1f, 0.0f);
             draw_string(fw*0.5f - 54, 18.0f, 14.0f, 22.0f, "DANGER");
+        }
+
+        // 燃料警告: 右上 (2Hz点滅)
+        if (gs->fuel_warning && (tick / 500) % 2 == 0) {
+            float p = 0.6f + 0.4f * sinf((float)tick * 0.004f);
+            glColor3f(1.0f, p * 0.45f, 0.0f);
+            draw_string(fw - 86.0f, 12.0f, 9.0f, 14.0f, "FUEL LOW");
+        }
+
+        // 時間警告: 左上 (6Hz点滅)
+        if (gs->time_warning && (tick / 167) % 2 == 0) {
+            float p = 0.7f + 0.3f * sinf((float)tick * 0.019f);
+            glColor3f(1.0f, p * 0.15f, 0.0f);
+            draw_string(6.0f, 12.0f, 9.0f, 14.0f, "TIME LOW");
         }
     }
 
@@ -1484,6 +1591,7 @@ int main(int argc, char *argv[]) {
                 gs.ring_timer       = RING_TIME_LIMIT;
                 gs.stage            = 1;
                 gs.countdown_val    = COUNTDOWN_START;
+                gs.countdown_last_n = (int)COUNTDOWN_START + 1;
                 gs.mode             = chosen_mode;
                 gs.ship             = chosen_ship;
                 gs.ranking_mode_idx = rmi;
@@ -1496,6 +1604,17 @@ int main(int argc, char *argv[]) {
         // ---- カウントダウン ----
         if (gs.state == STATE_COUNTDOWN) {
             gs.countdown_val -= dt;
+            // pip: カウント値が下がるたびに1回鳴らす
+            int cn = (int)ceilf(gs.countdown_val);
+            if (cn >= 1 && cn < gs.countdown_last_n) {
+                audio_play_pip();
+                gs.countdown_last_n = cn;
+            }
+            // gong: 0以下になったらGOサウンド (1回だけ)
+            if (gs.countdown_val <= 0.0f && gs.countdown_last_n > 0) {
+                audio_play_gong();
+                gs.countdown_last_n = 0;
+            }
             if (gs.countdown_val <= -1.0f) gs.state = STATE_PLAYING;
             goto render;
         }
@@ -1554,8 +1673,9 @@ int main(int argc, char *argv[]) {
                 gs.rings_done    = 0;
                 gs.ring_timer    = RING_TIME_LIMIT;
                 gs.fuel          = INITIAL_FUEL;
-                gs.countdown_val = COUNTDOWN_START;
-                gs.state         = STATE_COUNTDOWN;
+                gs.countdown_val    = COUNTDOWN_START;
+                gs.countdown_last_n = (int)COUNTDOWN_START + 1;
+                gs.state            = STATE_COUNTDOWN;
                 spawn_ring(&gs.ring, 1, gs.stage); // 次ステージの1個目
             }
             goto render;
@@ -1609,15 +1729,11 @@ int main(int argc, char *argv[]) {
             gs.vel = vadd(gs.vel, vscale(gs.fwd, MAIN_ACCEL * ship_accel_mul * dt));
             gs.fuel -= FUEL_MAIN * dt;
         }
-        audio_thruster(thrusting);
-
-        // 衝突予測警告
-        gs.collision_warning = predict_collision(&gs);
-        audio_warning_tone(gs.collision_warning);
 
         // ブレーキ (X/B) - ハードモード以外のみ有効
-        if (gs.mode != MODE_HARD &&
-            (keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_B]) && gs.fuel > 0.0f) {
+        int braking = gs.mode != MODE_HARD &&
+                      (keys[SDL_SCANCODE_X] || keys[SDL_SCANCODE_B]) && gs.fuel > 0.0f;
+        if (braking) {
             float spd = vlen(gs.vel);
             if (spd > 1e-4f) {
                 float dv = BRAKE_ACCEL * dt;
@@ -1629,6 +1745,21 @@ int main(int argc, char *argv[]) {
             }
             gs.fuel -= FUEL_BRAKE * dt;
         }
+
+        audio_thruster(thrusting || braking || rotating);
+
+        // 衝突予測警告
+        gs.collision_warning = predict_collision(&gs);
+        audio_warning_tone(gs.collision_warning);
+
+        // 燃料・時間警告
+        gs.fuel_warning = (gs.fuel <= INITIAL_FUEL * 0.30f);
+        gs.time_warning = (gs.ring_timer <= 10.0f);
+        // 時間警告 > 燃料警告 の優先順位
+        int stat_level = gs.time_warning ? 2 : gs.fuel_warning ? 1 : 0;
+        audio_status_warning(stat_level);
+
+
 
         if (gs.fuel < 0.0f) gs.fuel = 0.0f;
 
@@ -1697,6 +1828,7 @@ int main(int argc, char *argv[]) {
         if (gs.state != STATE_PLAYING) {
             audio_thruster(0);
             audio_warning_tone(0);
+            audio_status_warning(0);
         }
         int ww, wh;
         SDL_GetWindowSize(window, &ww, &wh);
