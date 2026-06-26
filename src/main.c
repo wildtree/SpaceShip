@@ -92,9 +92,14 @@ static Vec3 vrotate(Vec3 v, Vec3 axis, float angle) {
 
 // ==================== ゲーム状態 ====================
 typedef struct {
-    Vec3 pos;     // リング中心位置
-    Vec3 normal;  // リング法線 (向き)
-    Vec3 up;      // リング上方向
+    Vec3  pos;        // リング中心位置
+    Vec3  normal;     // リング法線 (向き)
+    Vec3  up;         // リング上方向
+    float rot_speed;  // 回転角速度 [rad/s] (0=静止)
+    Vec3  rot_axis;   // 世界座標系固定の回転軸
+    float move_speed; // 移動速度 [px/s] (0=静止)
+    Vec3  move_dir;   // 移動方向 (正規化済み)
+    int   color_type; // 0=金, 1=シアン(回転), 2=マゼンタ(移動)
 } Ring;
 
 typedef enum {
@@ -123,7 +128,7 @@ typedef enum {
 } GameStateEnum;
 
 // ハイスコア (モード別)
-#define HISCORE_FILE "scores.dat"
+#define HISCORE_FILE "scores.json"
 typedef struct {
     char initials[4]; // イニシャル3文字 + '\0'
     int  score;
@@ -188,41 +193,123 @@ static char *get_datadir(void)
     return datadir;
 }
 
+// ---- 最小JSONヘルパー (固定スキーマ専用) ----
+
+// obj[0..obj_len) の中で "key":"..." を探してvalueを返す
+static int json_get_str(const char *obj, const char *key, char *out, int maxout) {
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\":\"", key);
+    const char *p = strstr(obj, pat);
+    if (!p) return 0;
+    p += strlen(pat);
+    int i = 0;
+    while (i < maxout - 1 && *p && *p != '"') out[i++] = *p++;
+    out[i] = '\0';
+    return 1;
+}
+
+// obj[0..obj_len) の中で "key":number を探してvalueを返す
+static int json_get_int(const char *obj, const char *key, int *out) {
+    char pat[64];
+    snprintf(pat, sizeof(pat), "\"%s\":", key);
+    const char *p = strstr(obj, pat);
+    if (!p) return 0;
+    p += strlen(pat);
+    while (*p == ' ') p++;
+    *out = atoi(p);
+    return 1;
+}
+
+// パスを構築する共通処理
+static void build_hiscore_path(char *buf, int bufsz) {
+    const char *dir = get_datadir();
+    snprintf(buf, bufsz, "%s/%s", dir ? dir : ".", HISCORE_FILE);
+}
+
 static void hiscore_save(void) {
     static const char mode_ch[3] = {'E', 'N', 'H'};
-    static char hiscore_path[PATH_MAX];
-    strncpy(hiscore_path, get_datadir(), PATH_MAX);
-    strncat(hiscore_path, "/", PATH_MAX - strlen(hiscore_path));
-    strncat(hiscore_path, HISCORE_FILE, PATH_MAX - strlen(hiscore_path));
-    FILE *f = fopen(hiscore_path, "w");
+    char path[PATH_MAX];
+    build_hiscore_path(path, sizeof(path));
+    FILE *f = fopen(path, "w");
     if (!f) return;
-    for (int m = 0; m < 3; m++)
-        for (int i = 0; i < g_hiscore_count[m]; i++)
-            fprintf(f, "%c %.3s %d %d\n",
+
+    fprintf(f, "{\n  \"scores\": [");
+    int first = 1;
+    for (int m = 0; m < 3; m++) {
+        for (int i = 0; i < g_hiscore_count[m]; i++) {
+            fprintf(f, "%s\n    {"
+                       "\"mode\": \"%c\", "
+                       "\"initials\": \"%.3s\", "
+                       "\"score\": %d, "
+                       "\"stage\": %d"
+                       "}",
+                    first ? "" : ",",
                     mode_ch[m],
                     g_hiscores[m][i].initials,
                     g_hiscores[m][i].score,
                     g_hiscores[m][i].stage);
+            first = 0;
+        }
+    }
+    fprintf(f, "\n  ]\n}\n");
     fclose(f);
 }
 
 static void hiscore_load(void) {
-    static char hiscore_path[PATH_MAX];
-    strncpy(hiscore_path, get_datadir(), PATH_MAX);
-    strncat(hiscore_path, "/", PATH_MAX - strlen(hiscore_path));
-    strncat(hiscore_path, HISCORE_FILE, PATH_MAX - strlen(hiscore_path));
-    FILE *f = fopen(hiscore_path, "r");
+    char path[PATH_MAX];
+    build_hiscore_path(path, sizeof(path));
+    FILE *f = fopen(path, "r");
     if (!f) return;
-    char mc, init[8];
-    int  score, stage;
-    while (fscanf(f, " %c %7s %d %d", &mc, init, &score, &stage) == 4) {
-        int m = (mc == 'E') ? 0 : (mc == 'N') ? 1 : (mc == 'H') ? 2 : -1;
-        if (m < 0) continue;
-        init[3] = '\0';
-        if (g_hiscore_count[m] < HISCORE_COUNT)
-            hiscore_add(init, score, stage, m);
-    }
+
+    // ファイル全体をバッファに読み込む
+    fseek(f, 0, SEEK_END);
+    long fsz = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsz <= 0 || fsz > 65536) { fclose(f); return; }
+    char *buf = malloc((size_t)fsz + 1);
+    if (!buf) { fclose(f); return; }
+    size_t nread = fread(buf, 1, (size_t)fsz, f);
+    buf[nread] = '\0';
+    buf[fsz] = '\0';
     fclose(f);
+
+    // "scores" 配列の [ ... ] 内だけを対象にする
+    const char *arr_start = strstr(buf, "\"scores\"");
+    if (arr_start) arr_start = strchr(arr_start, '[');
+    if (!arr_start) { free(buf); return; }
+    const char *arr_end = strchr(arr_start, ']');
+    if (!arr_end) arr_end = buf + fsz;
+
+    // 配列内の各オブジェクト { ... } を走査
+    const char *p = arr_start;
+    while (p < arr_end && (p = strchr(p, '{')) != NULL && p < arr_end) {
+        const char *obj_end = strchr(p, '}');
+        if (!obj_end || obj_end > arr_end) break;
+
+        // オブジェクトをコピーしてフィールド抽出
+        int obj_len = (int)(obj_end - p + 1);
+        char obj[256];
+        if (obj_len >= (int)sizeof(obj)) { p = obj_end + 1; continue; }
+        memcpy(obj, p, (size_t)obj_len);
+        obj[obj_len] = '\0';
+
+        char mode_s[4] = "", init[8] = "";
+        int  score = 0, stage = 0;
+        if (json_get_str(obj, "mode",     mode_s, sizeof(mode_s)) &&
+            json_get_str(obj, "initials", init,   sizeof(init))   &&
+            json_get_int(obj, "score",    &score)                  &&
+            json_get_int(obj, "stage",    &stage)) {
+            int m = (mode_s[0] == 'E') ? 0
+                  : (mode_s[0] == 'N') ? 1
+                  : (mode_s[0] == 'H') ? 2 : -1;
+            if (m >= 0 && g_hiscore_count[m] < HISCORE_COUNT) {
+                init[3] = '\0';
+                hiscore_add(init, score, stage, m);
+            }
+        }
+        p = obj_end + 1;
+    }
+    free(buf);
 }
 
 typedef struct {
@@ -249,16 +336,111 @@ typedef struct {
     int      mode_sel;      // モード選択カーソル
     ShipType ship;          // 選択された機体
     int      ship_sel;      // 機体選択カーソル
-    int      ranking_mode_idx; // ランキング表示モードのインデックス (0-2)
+    int      ranking_mode_idx;  // ランキング表示モードのインデックス (0-2)
+    int      collision_warning; // 衝突予測警告フラグ
 } GameState;
 
+// ==================== オーディオ ====================
+static SDL_AudioStream *g_thruster_stream = NULL;
+static float            g_noise_lpf       = 0.0f;
+
+static SDL_AudioStream *g_warning_stream  = NULL;
+static float            g_warn_sine_phase = 0.0f; // サイン波の位相
+static float            g_warn_mod_phase  = 0.0f; // AM変調の位相
+
+static void audio_init(void) {
+    if (!SDL_InitSubSystem(SDL_INIT_AUDIO)) return;
+    SDL_AudioSpec spec = { SDL_AUDIO_F32, 1, 22050 };
+    g_thruster_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (g_thruster_stream) SDL_ResumeAudioStreamDevice(g_thruster_stream);
+    g_warning_stream = SDL_OpenAudioDeviceStream(
+        SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
+    if (g_warning_stream) SDL_ResumeAudioStreamDevice(g_warning_stream);
+}
+
+static void audio_thruster(int on) {
+    if (!g_thruster_stream) return;
+    if (!on) {
+        SDL_ClearAudioStream(g_thruster_stream);
+        g_noise_lpf = 0.0f;
+        return;
+    }
+    // バッファが80ms未満なら補充する
+    const int SAMPLE_RATE  = 22050;
+    const int TARGET_BYTES = (int)(SAMPLE_RATE * 0.08f) * (int)sizeof(float);
+    int queued = SDL_GetAudioStreamQueued(g_thruster_stream);
+    if (queued >= TARGET_BYTES) return;
+    int n = (TARGET_BYTES - queued) / (int)sizeof(float);
+
+    float buf[1024];
+    while (n > 0) {
+        int batch = n < 1024 ? n : 1024;
+        for (int i = 0; i < batch; i++) {
+            // ホワイトノイズ → 一極LPF (α=0.65, fc≈5kHz@22050Hz) → シュー音
+            float r = ((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            g_noise_lpf = 0.65f * r + 0.35f * g_noise_lpf;
+            buf[i] = g_noise_lpf * 0.45f;
+        }
+        SDL_PutAudioStreamData(g_thruster_stream, buf, batch * (int)sizeof(float));
+        n -= batch;
+    }
+}
+
+// 880Hz サイン波を 4Hz でパルス変調した警告音
+static void audio_warning_tone(int on) {
+    if (!g_warning_stream) return;
+    if (!on) {
+        SDL_ClearAudioStream(g_warning_stream);
+        g_warn_sine_phase = 0.0f;
+        g_warn_mod_phase  = 0.0f;
+        return;
+    }
+    const int   SR         = 22050;
+    const float FREQ       = 880.0f;
+    const float MOD_FREQ   = 4.0f;   // 4回/秒でパルス
+    const int   TARGET     = (int)(SR * 0.08f) * (int)sizeof(float);
+    int queued = SDL_GetAudioStreamQueued(g_warning_stream);
+    if (queued >= TARGET) return;
+    int n = (TARGET - queued) / (int)sizeof(float);
+    float buf[1024];
+    while (n > 0) {
+        int batch = n < 1024 ? n : 1024;
+        for (int i = 0; i < batch; i++) {
+            float s   = sinf(g_warn_sine_phase * 2.0f * (float)M_PI);
+            g_warn_sine_phase += FREQ / SR;
+            if (g_warn_sine_phase >= 1.0f) g_warn_sine_phase -= 1.0f;
+            float mod = (g_warn_mod_phase < 0.5f) ? 1.0f : 0.0f;
+            g_warn_mod_phase += MOD_FREQ / SR;
+            if (g_warn_mod_phase >= 1.0f) g_warn_mod_phase -= 1.0f;
+            buf[i] = s * mod * 0.35f;
+        }
+        SDL_PutAudioStreamData(g_warning_stream, buf, batch * (int)sizeof(float));
+        n -= batch;
+    }
+}
+
+static void audio_cleanup(void) {
+    if (g_thruster_stream) {
+        SDL_DestroyAudioStream(g_thruster_stream);
+        g_thruster_stream = NULL;
+    }
+    if (g_warning_stream) {
+        SDL_DestroyAudioStream(g_warning_stream);
+        g_warning_stream = NULL;
+    }
+}
+
+// ==================== ゲーム状態 ====================
 static void gs_reorthogonalize(GameState *gs) {
     gs->fwd = vnorm(gs->fwd);
     Vec3 right = vnorm(vcross(gs->fwd, gs->up));
     gs->up = vnorm(vcross(right, gs->fwd));
 }
 
-static void spawn_ring(Ring *ring) {
+// ring_num: ステージ内の何個目か (1-5)
+// stage: 現在のステージ番号
+static void spawn_ring(Ring *ring, int ring_num, int stage) {
     // ランダム位置
     ring->pos = v3(
         (float)(rand() % (int)SPACE_SIZE),
@@ -273,6 +455,30 @@ static void spawn_ring(Ring *ring) {
     // ring->up を法線と直交するように設定
     Vec3 arb = (fabsf(ring->normal.y) < 0.9f) ? v3(0,1,0) : v3(1,0,0);
     ring->up = vnorm(vcross(vnorm(vcross(ring->normal, arb)), ring->normal));
+
+    // 回転: ring_num >= 7-stage かつ stage >= 2
+    // (ring5: st2〜, ring4: st3〜, ring3: st4〜, ring2: st5〜, ring1: st6〜)
+    int should_rotate = (stage >= 2) && (ring_num >= 7 - stage);
+    ring->rot_speed = should_rotate ? ((float)M_PI / 30.0f) : 0.0f;
+    // 回転軸: リング平面内のright方向 (スポーン時に固定)
+    ring->rot_axis = should_rotate
+        ? vnorm(vcross(ring->normal, ring->up))
+        : v3(0.0f, 1.0f, 0.0f);
+
+    // 移動: ring_num >= 12-stage かつ stage >= 7
+    // (ring5: st7〜, ring4: st8〜, ring3: st9〜, ...)
+    int should_move = (stage >= 7) && (ring_num >= 12 - stage);
+    ring->move_speed = should_move ? 50.0f : 0.0f;
+    if (should_move) {
+        float mt = ((float)rand() / RAND_MAX) * 2.0f * (float)M_PI;
+        float mp = acosf(2.0f * ((float)rand() / RAND_MAX) - 1.0f);
+        ring->move_dir = vnorm(v3(sinf(mp)*cosf(mt), sinf(mp)*sinf(mt), cosf(mp)));
+    } else {
+        ring->move_dir = v3(0.0f, 0.0f, 0.0f);
+    }
+
+    // 色: 移動=マゼンタ > 回転=シアン > 通常=金
+    ring->color_type = should_move ? 2 : (should_rotate ? 1 : 0);
 }
 
 // リング通過判定
@@ -330,6 +536,39 @@ static int check_ring_hit(GameState *gs) {
     return 0;
 }
 
+// 衝突予測: 現在の速度・進路で WARN_HORIZON 秒以内にリングに衝突するか
+#define WARN_HORIZON 5.0f
+#define WARN_DT_STEP 0.05f  // サンプリング間隔 (5s / 0.05 = 100ステップ)
+
+static int predict_collision(const GameState *gs) {
+    float hit_r = RING_TUBE_RADIUS + SHIP_RADIUS;
+    for (float t = WARN_DT_STEP; t <= WARN_HORIZON; t += WARN_DT_STEP) {
+        // 船の予測位置
+        Vec3 spos = vwrap(vadd(gs->pos, vscale(gs->vel, t)));
+        // リングの予測位置・法線
+        Vec3 rpos  = gs->ring.pos;
+        Vec3 rnorm = gs->ring.normal;
+        if (gs->ring.move_speed > 0.0f)
+            rpos = vwrap(vadd(rpos, vscale(gs->ring.move_dir, gs->ring.move_speed * t)));
+        if (gs->ring.rot_speed != 0.0f)
+            rnorm = vnorm(vrotate(rnorm, gs->ring.rot_axis, gs->ring.rot_speed * t));
+        // トーラス衝突判定 (27コピー)
+        Vec3 raw = vsub(rpos, spos);
+        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dz = -1; dz <= 1; dz++) {
+            Vec3 d = v3(raw.x+dx*SPACE_SIZE, raw.y+dy*SPACE_SIZE, raw.z+dz*SPACE_SIZE);
+            if (vlen(d) > SPACE_SIZE * 0.6f) continue;
+            Vec3  s      = vscale(d, -1.0f);
+            float an     = vdot(s, rnorm);
+            float r      = vlen(vsub(s, vscale(rnorm, an)));
+            float dist   = sqrtf((r-RING_RADIUS)*(r-RING_RADIUS) + an*an);
+            if (dist < hit_r) return 1;
+        }
+    }
+    return 0;
+}
+
 // ==================== 描画ユーティリティ ====================
 static Vec3 g_stars[STAR_COUNT];
 
@@ -361,7 +600,11 @@ static void render_ring_at(Ring *ring, Vec3 rel) {
     Vec3 rr   = vnorm(vcross(norm, ring->up));
     Vec3 up   = ring->up;
 
-    glColor3f(1.0f, 0.55f, 0.0f);
+    switch (ring->color_type) {
+        case 1:  glColor3f(0.0f, 1.0f, 1.0f); break; // シアン (回転)
+        case 2:  glColor3f(1.0f, 0.0f, 1.0f); break; // マゼンタ (移動)
+        default: glColor3f(1.0f, 0.55f, 0.0f); break; // 金 (通常)
+    }
     for (int i = 0; i < RING_SEGMENTS; i++) {
         float a0 = (float)i       / RING_SEGMENTS * 2.0f * (float)M_PI;
         float a1 = (float)(i + 1) / RING_SEGMENTS * 2.0f * (float)M_PI;
@@ -1081,6 +1324,17 @@ static void render_hud(GameState *gs, int w, int h) {
         draw_string(fw*0.5f - 55, ry + 150, rscw, rsch, "HIT ANY KEY");
     }
 
+    // ---- 衝突警告 (PLAYING中のみ) ----
+    if (gs->state == STATE_PLAYING && gs->collision_warning) {
+        // 5Hzで点滅 (200ms周期)
+        if ((SDL_GetTicks() / 200) % 2 == 0) {
+            float pulse = 0.7f + 0.3f * sinf((float)SDL_GetTicks() * 0.01f);
+            glColor3f(1.0f, pulse * 0.1f, 0.0f);
+            // "DANGER" を画面上部中央に大きく
+            draw_string(fw*0.5f - 54, 18.0f, 14.0f, 22.0f, "DANGER");
+        }
+    }
+
     // ---- カウントダウン ----
     if (gs->state == STATE_COUNTDOWN) {
         int n = (int)ceilf(gs->countdown_val);
@@ -1111,6 +1365,7 @@ int main(int argc, char *argv[]) {
     (void)argc; (void)argv;
     srand((unsigned)time(NULL));
     hiscore_load();
+    audio_init();
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("SDL_Init: %s", SDL_GetError());
@@ -1151,7 +1406,7 @@ int main(int argc, char *argv[]) {
     gs.title_timer = TITLE_FLIP_SEC;
 
     init_stars();
-    spawn_ring(&gs.ring);
+    spawn_ring(&gs.ring, 1, 1); // タイトル画面用ダミー
 
     Uint64 prev_tick = SDL_GetTicks();
     int running = 1;
@@ -1233,7 +1488,7 @@ int main(int argc, char *argv[]) {
                 gs.ship             = chosen_ship;
                 gs.ranking_mode_idx = rmi;
                 gs.state            = STATE_COUNTDOWN;
-                spawn_ring(&gs.ring);
+                spawn_ring(&gs.ring, 1, 1); // ステージ1の1個目
             }
             goto render;
         }
@@ -1301,7 +1556,7 @@ int main(int argc, char *argv[]) {
                 gs.fuel          = INITIAL_FUEL;
                 gs.countdown_val = COUNTDOWN_START;
                 gs.state         = STATE_COUNTDOWN;
-                spawn_ring(&gs.ring);
+                spawn_ring(&gs.ring, 1, gs.stage); // 次ステージの1個目
             }
             goto render;
         }
@@ -1349,10 +1604,16 @@ int main(int argc, char *argv[]) {
         }
 
         // メインスラスター (Z/A)
-        if ((keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_A]) && gs.fuel > 0.0f) {
+        int thrusting = (keys[SDL_SCANCODE_Z] || keys[SDL_SCANCODE_A]) && gs.fuel > 0.0f;
+        if (thrusting) {
             gs.vel = vadd(gs.vel, vscale(gs.fwd, MAIN_ACCEL * ship_accel_mul * dt));
             gs.fuel -= FUEL_MAIN * dt;
         }
+        audio_thruster(thrusting);
+
+        // 衝突予測警告
+        gs.collision_warning = predict_collision(&gs);
+        audio_warning_tone(gs.collision_warning);
 
         // ブレーキ (X/B) - ハードモード以外のみ有効
         if (gs.mode != MODE_HARD &&
@@ -1374,6 +1635,17 @@ int main(int argc, char *argv[]) {
         // 速度減衰 (-kv)
         if (DRAG_K > 0.0f) {
             gs.vel = vadd(gs.vel, vscale(gs.vel, -DRAG_K * dt));
+        }
+
+        // リング更新 (回転・移動)
+        if (gs.ring.rot_speed != 0.0f) {
+            float angle = gs.ring.rot_speed * dt;
+            gs.ring.normal = vnorm(vrotate(gs.ring.normal, gs.ring.rot_axis, angle));
+            gs.ring.up     = vnorm(vrotate(gs.ring.up,     gs.ring.rot_axis, angle));
+        }
+        if (gs.ring.move_speed > 0.0f) {
+            gs.ring.pos = vwrap(vadd(gs.ring.pos,
+                                     vscale(gs.ring.move_dir, gs.ring.move_speed * dt)));
         }
 
         // 位置更新 (トーラス空間)
@@ -1398,8 +1670,11 @@ int main(int argc, char *argv[]) {
 
         // リング通過判定 (穴をくぐった)
         if (check_ring_pass(&gs)) {
-            // スコア: 基本点 + 残り秒数ボーナス
-            int ring_score = RING_BASE_SCORE + (int)(gs.ring_timer) * RING_TIME_BONUS;
+            // スコア: 基本点 (リング種別で変化) + 残り秒数ボーナス
+            int base = (gs.ring.color_type == 2) ? 400
+                     : (gs.ring.color_type == 1) ? 200
+                     : RING_BASE_SCORE;
+            int ring_score = base + (int)(gs.ring_timer) * RING_TIME_BONUS;
             gs.score     += ring_score;
             gs.rings_done++;
             gs.ring_timer = RING_TIME_LIMIT;  // タイマーリセット
@@ -1412,12 +1687,17 @@ int main(int argc, char *argv[]) {
                 gs.stage++;
                 gs.state = STATE_STAGE_CLEAR;
             } else {
-                spawn_ring(&gs.ring);
+                spawn_ring(&gs.ring, gs.rings_done + 1, gs.stage);
             }
         }
 
         // ==================== 描画 ====================
         render:;
+        // PLAYING以外のフレームではスラスター音を止める
+        if (gs.state != STATE_PLAYING) {
+            audio_thruster(0);
+            audio_warning_tone(0);
+        }
         int ww, wh;
         SDL_GetWindowSize(window, &ww, &wh);
         if (wh == 0) wh = 1;
@@ -1463,6 +1743,7 @@ int main(int argc, char *argv[]) {
         SDL_GL_SwapWindow(window);
     }
 
+    audio_cleanup();
     SDL_GL_DestroyContext(gl_ctx);
     SDL_DestroyWindow(window);
     SDL_Quit();
