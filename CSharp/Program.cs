@@ -496,6 +496,7 @@ internal static unsafe class Game
             {
                 if (anyKey)
                 {
+                    gs.StageStart = 1;
                     gs.State      = GameStateEnum.Title;
                     gs.TitleTimer = C.TITLE_FLIP_SEC;
                 }

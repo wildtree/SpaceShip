@@ -173,6 +173,9 @@ internal static class Renderer
         Vec3  delta = Vec3.TorusDelta(shipPos, gs.NeutronStarPos);
         float rx = delta.X, ry = delta.Y, rz = delta.Z;
 
+        // 複数レイヤを同一深度で重ね描きするため深度書き込みを停止
+        // (深度テストは維持: リングの裏側には描画されない)
+        Gl.DepthMask(false);
         Gl.Enable(EnableCap.PointSmooth);
         Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
 
@@ -193,6 +196,7 @@ internal static class Renderer
 
         Gl.Disable(EnableCap.PointSmooth);
         Gl.PointSize(1.0f);
+        Gl.DepthMask(true);
     }
 
     // ==================== HUD helpers ====================
