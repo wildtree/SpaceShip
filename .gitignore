@@ -1,2 +1,4 @@
 build/
 .claude/
+CSharp/obj/
+CSharp/bin/

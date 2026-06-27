@@ -341,6 +341,7 @@ typedef struct {
     int      fuel_warning;      // 燃料残量警告 (≤30%)
     int      time_warning;      // 残り時間警告 (≤10s)
     int      countdown_last_n;  // 最後にpipを鳴らしたカウント値
+    float    excellent_timer;   // "EXCELLENT" 表示残り秒数
 } GameState;
 
 // ==================== オーディオ ====================
@@ -523,6 +524,34 @@ static void audio_play_gong(void) {
     audio_push_tone(550.0f, 0.70f, 0.60f, 3.5f, 0.25f);
 }
 
+// ドカン爆発音: 低域フィルタノイズ + 低周波サイン波 ミックス、指数減衰
+static void audio_play_explosion(void) {
+    if (!g_countdown_stream) return; // カウントダウンストリームを流用
+    SDL_ClearAudioStream(g_countdown_stream);
+    const int   SR    = 22050;
+    const float DUR   = 1.6f;
+    const float DECAY = 3.5f;  // 減衰速度
+    int total = (int)(SR * DUR);
+    float lpf = 0.0f;          // ノイズ用LPF状態
+    float buf[512];
+    for (int pushed = 0; pushed < total; ) {
+        int batch = total - pushed;
+        if (batch > 512) batch = 512;
+        for (int i = 0; i < batch; i++) {
+            float t   = (float)(pushed + i) / SR;
+            float env = expf(-DECAY * t);
+            // 低域ノイズ (α=0.55)
+            float r = ((float)rand() / (float)RAND_MAX) * 2.0f - 1.0f;
+            lpf = 0.55f * r + 0.45f * lpf;
+            // 80Hz の低周波ドーン感
+            float boom = sinf(t * 80.0f * 2.0f * (float)M_PI);
+            buf[i] = (lpf * 0.55f + boom * 0.45f) * env * 0.75f;
+        }
+        SDL_PutAudioStreamData(g_countdown_stream, buf, batch * (int)sizeof(float));
+        pushed += batch;
+    }
+}
+
 // ==================== ゲーム状態 ====================
 static void gs_reorthogonalize(GameState *gs) {
     gs->fwd = vnorm(gs->fwd);
@@ -591,7 +620,9 @@ static int check_ring_pass(GameState *gs) {
     Vec3 to_ring = torus_delta(cross_pt, gs->ring.pos);
     float along  = vdot(to_ring, gs->ring.normal);
     Vec3  in_plane = vsub(to_ring, vscale(gs->ring.normal, along));
-    return vlen(in_plane) <= RING_RADIUS;
+    float d = vlen(in_plane);
+    if (d > RING_RADIUS) return 0;
+    return (d <= 8.0f) ? 2 : 1; // 2=Excellent(中心8px以内), 1=通常通過
 }
 
 // リング枠への衝突判定
@@ -1427,6 +1458,16 @@ static void render_hud(GameState *gs, int w, int h) {
             draw_string(fw*0.5f - 54, 18.0f, 14.0f, 22.0f, "DANGER");
         }
 
+        // EXCELLENT表示: 画面中央やや上 (フェードアウト)
+        if (gs->excellent_timer > 0.0f) {
+            float alpha = (gs->excellent_timer < 0.5f) ? gs->excellent_timer * 2.0f : 1.0f;
+            float pulse = 0.85f + 0.15f * sinf((float)tick * 0.025f);
+            glColor3f(1.0f * pulse * alpha, 1.0f * pulse * alpha, 0.2f * alpha);
+            draw_string(fw*0.5f - 81, fh * 0.38f, 12.0f, 19.0f, "EXCELLENT");
+            glColor3f(1.0f * alpha, 0.7f * alpha, 0.1f * alpha);
+            draw_string(fw*0.5f - 22, fh * 0.38f + 24, 8.0f, 12.0f, "+50");
+        }
+
         // 燃料警告: 右上 (2Hz点滅)
         if (gs->fuel_warning && (tick / 500) % 2 == 0) {
             float p = 0.6f + 0.4f * sinf((float)tick * 0.004f);
@@ -1783,12 +1824,16 @@ int main(int argc, char *argv[]) {
         gs.prev_pos = gs.pos;
         gs.pos = vwrap(vadd(gs.pos, vscale(gs.vel, dt)));
 
+        // Excellentタイマー更新
+        if (gs.excellent_timer > 0.0f) gs.excellent_timer -= dt;
+
         // 制限時間カウントダウン
         gs.ring_timer -= dt;
         if (gs.ring_timer <= 0.0f) {
             // タイムアップ → ゲームオーバー
             gs.state         = STATE_EXPLODING;
             gs.explode_timer = EXPLODE_DURATION;
+            audio_play_explosion();
             goto render;
         }
 
@@ -1796,16 +1841,22 @@ int main(int argc, char *argv[]) {
         if (check_ring_hit(&gs)) {
             gs.state         = STATE_EXPLODING;
             gs.explode_timer = EXPLODE_DURATION;
+            audio_play_explosion();
             goto render;
         }
 
         // リング通過判定 (穴をくぐった)
-        if (check_ring_pass(&gs)) {
-            // スコア: 基本点 (リング種別で変化) + 残り秒数ボーナス
+        int pass_result = check_ring_pass(&gs);
+        if (pass_result) {
+            // スコア: 基本点 (リング種別で変化) + 残り秒数ボーナス + Excellentボーナス
             int base = (gs.ring.color_type == 2) ? 400
                      : (gs.ring.color_type == 1) ? 200
                      : RING_BASE_SCORE;
             int ring_score = base + (int)(gs.ring_timer) * RING_TIME_BONUS;
+            if (pass_result == 2) {
+                ring_score += 50;
+                gs.excellent_timer = 2.0f;
+            }
             gs.score     += ring_score;
             gs.rings_done++;
             gs.ring_timer = RING_TIME_LIMIT;  // タイマーリセット

@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+
 namespace SpaceShip;
 
 // ==================== GameState ====================
@@ -73,10 +76,11 @@ internal static class HiScoreManager
 
     private static string GetDataDir()
     {
-        string home = Environment.GetEnvironmentVariable("HOME")
-            ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        string dir = Path.Combine(home, ".local", "share", "WildTreeJP", "spaceship");
-        try { Directory.CreateDirectory(dir); } catch { }
+        string baseDir = Environment.GetFolderPath(
+            Environment.SpecialFolder.LocalApplicationData,
+            Environment.SpecialFolderOption.Create);
+        string dir = Path.Combine(baseDir, "WildTreeJP", "spaceship");
+        Directory.CreateDirectory(dir); // 既に存在する場合は何もしない
         return dir;
     }
 
@@ -84,29 +88,22 @@ internal static class HiScoreManager
 
     public static void Save()
     {
-        string path = GetPath();
         try
         {
             char[] modeChars = { 'E', 'N', 'H' };
-            var sb = new System.Text.StringBuilder();
-            sb.Append("{\n  \"scores\": [");
-            bool first = true;
+            var entries = new List<ScoreEntry>();
             for (int m = 0; m < 3; m++)
-            {
                 for (int i = 0; i < Counts[m]; i++)
-                {
-                    if (!first) sb.Append(',');
-                    sb.Append("\n    {");
-                    sb.Append($"\"mode\": \"{modeChars[m]}\", ");
-                    sb.Append($"\"initials\": \"{Scores[m, i].Initials.Substring(0, 3)}\", ");
-                    sb.Append($"\"score\": {Scores[m, i].Score}, ");
-                    sb.Append($"\"stage\": {Scores[m, i].Stage}");
-                    sb.Append('}');
-                    first = false;
-                }
-            }
-            sb.Append("\n  ]\n}\n");
-            File.WriteAllText(path, sb.ToString());
+                    entries.Add(new ScoreEntry(
+                        modeChars[m].ToString(),
+                        Scores[m, i].Initials[..3],
+                        Scores[m, i].Score,
+                        Scores[m, i].Stage));
+
+            string json = JsonSerializer.Serialize(
+                new ScoresFile(entries),
+                new JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(GetPath(), json);
         }
         catch { }
     }
@@ -117,65 +114,27 @@ internal static class HiScoreManager
         if (!File.Exists(path)) return;
         try
         {
-            string buf = File.ReadAllText(path);
-            // Find "scores" array
-            int arrStart = buf.IndexOf("\"scores\"", StringComparison.Ordinal);
-            if (arrStart < 0) return;
-            arrStart = buf.IndexOf('[', arrStart);
-            if (arrStart < 0) return;
-            int arrEnd = buf.IndexOf(']', arrStart);
-            if (arrEnd < 0) arrEnd = buf.Length;
-
-            // Parse each { ... } object
-            int p = arrStart;
-            while (p < arrEnd)
+            string json = File.ReadAllText(path);
+            var file = JsonSerializer.Deserialize<ScoresFile>(json);
+            if (file?.Scores == null) return;
+            foreach (var e in file.Scores)
             {
-                int objStart = buf.IndexOf('{', p);
-                if (objStart < 0 || objStart >= arrEnd) break;
-                int objEnd = buf.IndexOf('}', objStart);
-                if (objEnd < 0 || objEnd > arrEnd) break;
-                string obj = buf.Substring(objStart, objEnd - objStart + 1);
-
-                string modeS   = JsonGetStr(obj, "mode")     ?? "";
-                string initials = JsonGetStr(obj, "initials") ?? "";
-                int    score   = JsonGetInt(obj, "score");
-                int    stage   = JsonGetInt(obj, "stage");
-
-                if (modeS.Length > 0 && initials.Length > 0)
-                {
-                    int m = modeS[0] == 'E' ? 0 : modeS[0] == 'N' ? 1 : modeS[0] == 'H' ? 2 : -1;
-                    if (m >= 0 && Counts[m] < C.HISCORE_COUNT)
-                    {
-                        string init3 = (initials + "   ").Substring(0, 3);
-                        Add(init3, score, stage, m);
-                    }
-                }
-                p = objEnd + 1;
+                if (string.IsNullOrEmpty(e.Mode) || string.IsNullOrEmpty(e.Initials)) continue;
+                int m = e.Mode[0] switch { 'E' => 0, 'N' => 1, 'H' => 2, _ => -1 };
+                if (m >= 0 && Counts[m] < C.HISCORE_COUNT)
+                    Add((e.Initials + "   ")[..3], e.Score, e.Stage, m);
             }
         }
         catch { }
     }
 
-    private static string? JsonGetStr(string obj, string key)
-    {
-        string pat = $"\"{key}\":\"";
-        int idx = obj.IndexOf(pat, StringComparison.Ordinal);
-        if (idx < 0) return null;
-        int start = idx + pat.Length;
-        int end = obj.IndexOf('"', start);
-        if (end < 0) return null;
-        return obj.Substring(start, end - start);
-    }
+    // ---- JSON DTOs ----
+    private record ScoreEntry(
+        [property: JsonPropertyName("mode")]     string Mode,
+        [property: JsonPropertyName("initials")] string Initials,
+        [property: JsonPropertyName("score")]    int    Score,
+        [property: JsonPropertyName("stage")]    int    Stage);
 
-    private static int JsonGetInt(string obj, string key)
-    {
-        string pat = $"\"{key}\":";
-        int idx = obj.IndexOf(pat, StringComparison.Ordinal);
-        if (idx < 0) return 0;
-        int start = idx + pat.Length;
-        while (start < obj.Length && obj[start] == ' ') start++;
-        int end = start;
-        while (end < obj.Length && (char.IsDigit(obj[end]) || obj[end] == '-')) end++;
-        return int.TryParse(obj.Substring(start, end - start), out int v) ? v : 0;
-    }
+    private record ScoresFile(
+        [property: JsonPropertyName("scores")] List<ScoreEntry> Scores);
 }
