@@ -49,7 +49,7 @@ dotnet 10が必要です。
 $ git clone https://github.com/wildtree/SpaceShip.git
 $ cd SpaceShip/CSharp
 $ dotnet run
-```/
+```
 
 ## Tips
 
