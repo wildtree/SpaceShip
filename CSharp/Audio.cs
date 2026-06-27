@@ -18,6 +18,7 @@ internal static class AudioSystem
     private static int     s_statPrevLevel  = 0;
 
     private static IntPtr s_countdownStream = IntPtr.Zero;
+    private static IntPtr s_ringStream      = IntPtr.Zero; // リング通過SE専用
 
     public static void Init()
     {
@@ -36,6 +37,9 @@ internal static class AudioSystem
 
         s_countdownStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_countdownStream != IntPtr.Zero) ResumeAudioStreamDevice(s_countdownStream);
+
+        s_ringStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
+        if (s_ringStream != IntPtr.Zero) ResumeAudioStreamDevice(s_ringStream);
     }
 
     public static void Cleanup()
@@ -44,6 +48,7 @@ internal static class AudioSystem
         if (s_warningStream   != IntPtr.Zero) { DestroyAudioStream(s_warningStream);   s_warningStream   = IntPtr.Zero; }
         if (s_statusStream    != IntPtr.Zero) { DestroyAudioStream(s_statusStream);    s_statusStream    = IntPtr.Zero; }
         if (s_countdownStream != IntPtr.Zero) { DestroyAudioStream(s_countdownStream); s_countdownStream = IntPtr.Zero; }
+        if (s_ringStream      != IntPtr.Zero) { DestroyAudioStream(s_ringStream);      s_ringStream      = IntPtr.Zero; }
     }
 
     private static unsafe void PushFloats(IntPtr stream, float[] buf, int count)
@@ -186,6 +191,43 @@ internal static class AudioSystem
 
     public static void PlayPip()  => PushTone(1100.0f, 0.10f, 0.55f, 18.0f, 0.0f);
     public static void PlayGong() => PushTone(550.0f,  0.70f, 0.60f,  3.5f, 0.25f);
+
+    // リング通過SE: 周波数が上昇するスイープ音
+    // excellent=false: 500→1100Hz / 200ms (通常通過)
+    // excellent=true : 700→2000Hz + オクターブ倍音 / 300ms (Excellent)
+    public static void PlayRingPass(bool excellent)
+    {
+        if (s_ringStream == IntPtr.Zero) return;
+        ClearAudioStream(s_ringStream);
+        const int SR = 22050;
+        float f0    = excellent ? 700f  : 500f;
+        float f1    = excellent ? 2000f : 1100f;
+        float dur   = excellent ? 0.30f : 0.20f;
+        float vol   = excellent ? 0.55f : 0.45f;
+        float decay = excellent ? 5.0f  : 9.0f;
+        float harm  = excellent ? 0.30f : 0.0f; // オクターブ倍音の音量比
+
+        int total = (int)(SR * dur);
+        float phase = 0f;
+        float[] buf = new float[512];
+        for (int pushed = 0; pushed < total; )
+        {
+            int batch = Math.Min(total - pushed, 512);
+            for (int i = 0; i < batch; i++)
+            {
+                float t    = (float)(pushed + i) / SR;
+                float freq = f0 + (f1 - f0) * (t / dur); // 線形スイープ
+                float env  = MathF.Exp(-decay * t);
+                float s    = MathF.Sin(phase * 2f * MathF.PI)
+                           + harm * MathF.Sin(phase * 4f * MathF.PI); // オクターブ倍音
+                phase += freq / SR;
+                if (phase >= 1f) phase -= 1f;
+                buf[i] = s * env * vol;
+            }
+            PushFloats(s_ringStream, buf, batch);
+            pushed += batch;
+        }
+    }
 
     public static void PlayExplosion()
     {

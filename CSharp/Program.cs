@@ -13,6 +13,17 @@ namespace SpaceShip
 internal static unsafe class Game
 {
     private static readonly Vec3[] Stars = new Vec3[C.STAR_COUNT];
+    private static IntPtr s_gamepad = IntPtr.Zero;  // 現在使用中のゲームパッド
+    private const short PAD_DEAD = 8000;            // スティックのデッドゾーン (~25%)
+
+    // 接続中のゲームパッドから最初の1つを開く
+    private static void OpenFirstGamepad()
+    {
+        if (s_gamepad != IntPtr.Zero) return;
+        var ids = GetGamepads(out int count);
+        if (ids != null && count > 0)
+            s_gamepad = OpenGamepad(ids[0]);
+    }
 
     private static void InitStars()
     {
@@ -142,11 +153,12 @@ internal static unsafe class Game
         HiScoreManager.Load();
         AudioSystem.Init();
 
-        if (!Init(InitFlags.Video))
+        if (!Init(InitFlags.Video | InitFlags.Gamepad))
         {
             Console.Error.WriteLine($"SDL_Init: {GetError()}");
             return 1;
         }
+        OpenFirstGamepad(); // 起動時に接続済みのゲームパッドを開く
 
         GLSetAttribute(GLAttr.ContextMajorVersion, 2);
         GLSetAttribute(GLAttr.ContextMinorVersion, 1);
@@ -210,6 +222,7 @@ internal static unsafe class Game
             {
                 if (ev.Type == (uint)EventType.Quit)
                     running = false;
+
                 if (ev.Type == (uint)EventType.KeyDown)
                 {
                     switch (ev.Key.Key)
@@ -222,6 +235,38 @@ internal static unsafe class Game
                         case Keycode.Return:
                         case Keycode.KpEnter: keyEnter = true; anyKey = true; break;
                         default:              anyKey = true; break;
+                    }
+                }
+
+                // ゲームパッド接続/切断
+                if (ev.Type == (uint)EventType.GamepadAdded)
+                {
+                    if (s_gamepad == IntPtr.Zero)
+                        s_gamepad = OpenGamepad(ev.GDevice.Which);
+                }
+                if (ev.Type == (uint)EventType.GamepadRemoved)
+                {
+                    if (s_gamepad != IntPtr.Zero && GetGamepadID(s_gamepad) == ev.GDevice.Which)
+                    {
+                        CloseGamepad(s_gamepad);
+                        s_gamepad = IntPtr.Zero;
+                        OpenFirstGamepad(); // 他に繋がっているものを試みる
+                    }
+                }
+
+                // ゲームパッドボタン → メニュー操作
+                if (ev.Type == (uint)EventType.GamepadButtonDown)
+                {
+                    var btn = (GamepadButton)ev.GButton.Button;
+                    switch (btn)
+                    {
+                        case GamepadButton.DPadUp:    keyUp    = true; anyKey = true; break;
+                        case GamepadButton.DPadDown:  keyDown  = true; anyKey = true; break;
+                        case GamepadButton.DPadLeft:  keyLeft  = true; anyKey = true; break;
+                        case GamepadButton.DPadRight: keyRight = true; anyKey = true; break;
+                        case GamepadButton.South:     // A ボタン = 決定
+                        case GamepadButton.Start:     keyEnter = true; anyKey = true; break;
+                        default:                      anyKey = true; break;
                     }
                 }
             }
@@ -388,6 +433,21 @@ internal static unsafe class Game
             {
                 var keys = GetKeyboardState(out _);
 
+                // ゲームパッドの入力を取得
+                bool padUp = false, padDown = false, padLeft = false, padRight = false;
+                bool padThrust = false, padBrake = false;
+                if (s_gamepad != IntPtr.Zero)
+                {
+                    short ly = GetGamepadAxis(s_gamepad, GamepadAxis.LeftY);
+                    short lx = GetGamepadAxis(s_gamepad, GamepadAxis.LeftX);
+                    padUp    = ly < -PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadUp);
+                    padDown  = ly >  PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadDown);
+                    padLeft  = lx < -PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadLeft);
+                    padRight = lx >  PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadRight);
+                    padThrust = GetGamepadButton(s_gamepad, GamepadButton.South); // A ボタン
+                    padBrake  = GetGamepadButton(s_gamepad, GamepadButton.East);  // B ボタン
+                }
+
                 float shipRotMul   = (gs.Ship == ShipType.Agile) ? 2.0f : 1.0f;
                 float shipAccelMul = (gs.Ship == ShipType.Boost) ? 2.0f : 1.0f;
 
@@ -395,24 +455,24 @@ internal static unsafe class Game
                 float rot     = C.ROTATION_SPEED * shipRotMul * dt;
                 bool  rotating = false;
 
-                if (keys[(int)Scancode.Up])
+                if (keys[(int)Scancode.Up] || padUp)
                 {
                     gs.Fwd = Vec3.Rotate(gs.Fwd, right, rot);
                     gs.Up  = Vec3.Rotate(gs.Up,  right, rot);
                     rotating = true;
                 }
-                if (keys[(int)Scancode.Down])
+                if (keys[(int)Scancode.Down] || padDown)
                 {
                     gs.Fwd = Vec3.Rotate(gs.Fwd, right, -rot);
                     gs.Up  = Vec3.Rotate(gs.Up,  right, -rot);
                     rotating = true;
                 }
-                if (keys[(int)Scancode.Left])
+                if (keys[(int)Scancode.Left] || padLeft)
                 {
                     gs.Fwd = Vec3.Rotate(gs.Fwd, gs.Up, -rot);
                     rotating = true;
                 }
-                if (keys[(int)Scancode.Right])
+                if (keys[(int)Scancode.Right] || padRight)
                 {
                     gs.Fwd = Vec3.Rotate(gs.Fwd, gs.Up, rot);
                     rotating = true;
@@ -428,7 +488,7 @@ internal static unsafe class Game
                     }
                 }
 
-                bool thrusting = (keys[(int)Scancode.Z] || keys[(int)Scancode.A]) && gs.Fuel > 0.0f;
+                bool thrusting = (keys[(int)Scancode.Z] || keys[(int)Scancode.A] || padThrust) && gs.Fuel > 0.0f;
                 if (thrusting)
                 {
                     gs.Vel  = Vec3.Add(gs.Vel, Vec3.Scale(gs.Fwd, C.MAIN_ACCEL * shipAccelMul * dt));
@@ -436,7 +496,7 @@ internal static unsafe class Game
                 }
 
                 bool braking = gs.Mode != GameMode.Hard
-                            && (keys[(int)Scancode.X] || keys[(int)Scancode.B])
+                            && (keys[(int)Scancode.X] || keys[(int)Scancode.B] || padBrake)
                             && gs.Fuel > 0.0f;
                 if (braking)
                 {
@@ -510,6 +570,7 @@ internal static unsafe class Game
                         ringScore         += 50;
                         gs.ExcellentTimer  = 2.0f;
                     }
+                    AudioSystem.PlayRingPass(passResult == 2);
                     gs.Score     += ringScore;
                     gs.RingsDone++;
                     gs.RingTimer = C.RING_TIME_LIMIT;
@@ -583,6 +644,7 @@ internal static unsafe class Game
         }
 
         AudioSystem.Cleanup();
+        if (s_gamepad != IntPtr.Zero) CloseGamepad(s_gamepad);
         GLDestroyContext(glCtx);
         DestroyWindow(window);
         Quit();
