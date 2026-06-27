@@ -11,9 +11,9 @@ internal static class C
     public const float BRAKE_ACCEL      = 40.0f;
     public const float ROTATION_SPEED   = 1.8f;
     public const float DRAG_K           = 0.0f;
-    public const float FUEL_MAIN        = 8.0f;
-    public const float FUEL_BRAKE       = 8.0f;
-    public const float FUEL_ROTATE      = 2.0f;
+    public const float FUEL_MAIN        = 40.0f;
+    public const float FUEL_BRAKE       = 50.0f;
+    public const float FUEL_ROTATE      = 4.0f;
     public const float INITIAL_FUEL     = 1000.0f;
     public const int   STAR_COUNT       = 800;
     public const int   RING_SEGMENTS    = 64;

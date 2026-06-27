@@ -120,6 +120,7 @@ internal static unsafe class Game
             (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
             (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
             (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+        AudioSystem.PlayItemSpawn(gs.ItemType);
     }
 
     private static int CheckRingPass(GameState gs)

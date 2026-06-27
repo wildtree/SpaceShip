@@ -334,6 +334,23 @@ internal static class AudioSystem
         PushUiNote(990f, 0.13f, 0.42f, 12f);
     }
 
+    // アイテム出現: 取得音と対比させた下降チャイム (静かめ)
+    public static void PlayItemSpawn(int itemType)
+    {
+        if (s_uiStream == IntPtr.Zero) return;
+        ClearAudioStream(s_uiStream);
+        if (itemType == 1)
+        {
+            PushUiNote(784.0f, 0.07f, 0.20f, 14f); // G5
+            PushUiNote(523.3f, 0.11f, 0.16f,  8f); // C5
+        }
+        else
+        {
+            PushUiNote(466.2f, 0.07f, 0.20f, 14f); // Bb4
+            PushUiNote(311.1f, 0.11f, 0.16f,  8f); // Eb4
+        }
+    }
+
     // アイテム取得: 時間(1)=高音チャイム / 燃料(2)=中音チャイム
     public static void PlayItemGet(int itemType)
     {
