@@ -335,6 +335,7 @@ internal static unsafe class Game
                     gs.Ship             = chosenShip;
                     gs.RankingModeIdx   = rmi;
                     gs.State            = GameStateEnum.Countdown;
+                    AudioSystem.PlayJingleStart();
                     SpawnRing(ref gs.Ring, 1, 1);
                 }
                 goto doRender;
@@ -358,7 +359,7 @@ internal static unsafe class Game
                 if (gs.CountdownVal <= -1.0f)
                 {
                     gs.State = GameStateEnum.Playing;
-                    AudioSystem.PlayJingleStart();
+                    //AudioSystem.PlayJingleStart();
                 }
                 goto doRender;
             }
@@ -432,6 +433,7 @@ internal static unsafe class Game
                     gs.CountdownVal   = C.COUNTDOWN_START;
                     gs.CountdownLastN = (int)C.COUNTDOWN_START + 1;
                     gs.State          = GameStateEnum.Countdown;
+                    AudioSystem.PlayJingleStart();
                     SpawnRing(ref gs.Ring, 1, gs.Stage);
                 }
                 goto doRender;
