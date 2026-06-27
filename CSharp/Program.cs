@@ -353,7 +353,11 @@ internal static unsafe class Game
                     AudioSystem.PlayGong();
                     gs.CountdownLastN = 0;
                 }
-                if (gs.CountdownVal <= -1.0f) gs.State = GameStateEnum.Playing;
+                if (gs.CountdownVal <= -1.0f)
+                {
+                    gs.State = GameStateEnum.Playing;
+                    AudioSystem.PlayJingleStart();
+                }
                 goto doRender;
             }
 
@@ -372,6 +376,7 @@ internal static unsafe class Game
                     else
                     {
                         gs.State = GameStateEnum.GameOver;
+                        AudioSystem.PlayJingleGameOver();
                     }
                 }
                 goto doRender;
@@ -397,6 +402,7 @@ internal static unsafe class Game
                     HiScoreManager.Add(initials, gs.Score, gs.Stage, (int)gs.Mode);
                     HiScoreManager.Save();
                     gs.State = GameStateEnum.GameOver;
+                    AudioSystem.PlayJingleGameOver();
                 }
                 goto doRender;
             }
@@ -582,6 +588,7 @@ internal static unsafe class Game
                         gs.StageFuelBonus = fuelBonus;
                         gs.Stage++;
                         gs.State = GameStateEnum.StageClear;
+                        AudioSystem.PlayJingleClear();
                     }
                     else
                     {

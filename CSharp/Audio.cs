@@ -19,6 +19,7 @@ internal static class AudioSystem
 
     private static IntPtr s_countdownStream = IntPtr.Zero;
     private static IntPtr s_ringStream      = IntPtr.Zero; // リング通過SE専用
+    private static IntPtr s_jingleStream   = IntPtr.Zero; // ジングル専用
 
     public static void Init()
     {
@@ -40,6 +41,9 @@ internal static class AudioSystem
 
         s_ringStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_ringStream != IntPtr.Zero) ResumeAudioStreamDevice(s_ringStream);
+
+        s_jingleStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
+        if (s_jingleStream != IntPtr.Zero) ResumeAudioStreamDevice(s_jingleStream);
     }
 
     public static void Cleanup()
@@ -49,6 +53,7 @@ internal static class AudioSystem
         if (s_statusStream    != IntPtr.Zero) { DestroyAudioStream(s_statusStream);    s_statusStream    = IntPtr.Zero; }
         if (s_countdownStream != IntPtr.Zero) { DestroyAudioStream(s_countdownStream); s_countdownStream = IntPtr.Zero; }
         if (s_ringStream      != IntPtr.Zero) { DestroyAudioStream(s_ringStream);      s_ringStream      = IntPtr.Zero; }
+        if (s_jingleStream    != IntPtr.Zero) { DestroyAudioStream(s_jingleStream);    s_jingleStream    = IntPtr.Zero; }
     }
 
     private static unsafe void PushFloats(IntPtr stream, float[] buf, int count)
@@ -191,6 +196,82 @@ internal static class AudioSystem
 
     public static void PlayPip()  => PushTone(1100.0f, 0.10f, 0.55f, 18.0f, 0.0f);
     public static void PlayGong() => PushTone(550.0f,  0.70f, 0.60f,  3.5f, 0.25f);
+
+    // ---- ジングル共通ヘルパー ----
+
+    // ノート1音をジングルストリームに追加 (サイン波 + 5度倍音 + 減衰エンベロープ + 末尾無音ギャップ)
+    private static void PushJingleNote(float freq, float dur, float vol, float decay,
+                                        float harmRatio = 0.25f, float gapSec = 0.015f)
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        const int SR = 22050;
+        int noteSamples = (int)(SR * dur);
+        int gapSamples  = (int)(SR * gapSec);
+        float[] buf = new float[512];
+
+        // ノート本体
+        float phase = 0f;
+        for (int pushed = 0; pushed < noteSamples; )
+        {
+            int batch = Math.Min(noteSamples - pushed, 512);
+            for (int i = 0; i < batch; i++)
+            {
+                float t   = (float)(pushed + i) / SR;
+                float env = MathF.Exp(-decay * t);
+                // 基音 + 完全5度 (×1.5) でブラス的な音色に
+                float s   = MathF.Sin(phase       * 2f * MathF.PI)
+                          + harmRatio * MathF.Sin(phase * 3f * MathF.PI);
+                phase += freq / SR;
+                if (phase >= 1f) phase -= 1f;
+                buf[i] = s * env * vol;
+            }
+            PushFloats(s_jingleStream, buf, batch);
+            pushed += batch;
+        }
+
+        // 無音ギャップ
+        for (int pushed = 0; pushed < gapSamples; )
+        {
+            int batch = Math.Min(gapSamples - pushed, 512);
+            Array.Clear(buf, 0, batch);
+            PushFloats(s_jingleStream, buf, batch);
+            pushed += batch;
+        }
+    }
+
+    // ステージ開始: C5→E5→G5→C6 上昇ファンファーレ (元気に)
+    public static void PlayJingleStart()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(523.3f,  0.08f, 0.50f, 16f);
+        PushJingleNote(659.3f,  0.08f, 0.50f, 16f);
+        PushJingleNote(784.0f,  0.08f, 0.50f, 16f);
+        PushJingleNote(1046.5f, 0.35f, 0.60f,  5f, gapSec: 0f);
+    }
+
+    // ステージクリア: C5→G5→C5→G5→C6 勝利ファンファーレ
+    public static void PlayJingleClear()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(523.3f,  0.10f, 0.50f, 12f, gapSec: 0.01f);
+        PushJingleNote(784.0f,  0.10f, 0.50f, 12f, gapSec: 0.01f);
+        PushJingleNote(523.3f,  0.10f, 0.50f, 12f, gapSec: 0.01f);
+        PushJingleNote(784.0f,  0.10f, 0.55f, 12f, gapSec: 0.01f);
+        PushJingleNote(1046.5f, 0.55f, 0.65f,  3f, gapSec: 0f);
+    }
+
+    // ゲームオーバー: A4→F4→C4→A3 暗く下降するフレーズ
+    public static void PlayJingleGameOver()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(440.0f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
+        PushJingleNote(349.2f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
+        PushJingleNote(261.6f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
+        PushJingleNote(220.0f, 0.80f, 0.55f, 2f, harmRatio: 0.15f, gapSec: 0f);
+    }
 
     // リング通過SE: 周波数が上昇するスイープ音
     // excellent=false: 500→1100Hz / 200ms (通常通過)
