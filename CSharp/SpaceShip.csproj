@@ -7,9 +7,23 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Optimize>true</Optimize>
     <RootNamespace>SpaceShip</RootNamespace>
+    <Authors>Hiroyuki Araki</Authors>
+    <Company>WildTree.JP</Company>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <Version>1.0.0</Version>
+    <ApplicationIcon>assets/spaceship.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SDL3-CS" Version="*" />
     <PackageReference Include="Silk.NET.OpenGL.Legacy" Version="*" />
+  </ItemGroup>
+  <ItemGroup>
+  <!-- data 以下のすべてのファイルを対象にする -->
+    <Content Include="data\**\*.*">
+      <!-- 出力先にコピーするルール -->
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <!-- フォルダ構造を保持する -->
+      <Link>data\%(RecursiveDir)%(Filename)%(Extension)</Link>
+    </Content>
   </ItemGroup>
 </Project>
