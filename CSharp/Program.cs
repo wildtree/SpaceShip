@@ -97,6 +97,31 @@ internal static unsafe class Game
         gs.HasNeutronStar = true;
     }
 
+    // ボーナスアイテムをスポーン (リングと中性子星から200px以上離れた場所)
+    private static void SpawnBonusItem(GameState gs)
+    {
+        // 30%=時間アイテム(1), 70%=燃料アイテム(2)
+        gs.ItemType = (Random.Shared.NextDouble() < 0.30) ? 1 : 2;
+
+        const float MIN_DIST = 200.0f;
+        for (int attempt = 0; attempt < 200; attempt++)
+        {
+            Vec3 pos = new Vec3(
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+            if (Vec3.Len(Vec3.TorusDelta(pos, gs.Ring.Pos)) < MIN_DIST) continue;
+            if (gs.HasNeutronStar && Vec3.Len(Vec3.TorusDelta(pos, gs.NeutronStarPos)) < MIN_DIST) continue;
+            gs.ItemPos = pos;
+            return;
+        }
+        // 200回試行で見つからなければ制約を無視して配置
+        gs.ItemPos = new Vec3(
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+    }
+
     private static int CheckRingPass(GameState gs)
     {
         Vec3  dCurr    = Vec3.TorusDelta(gs.Pos,     gs.Ring.Pos);
@@ -509,6 +534,7 @@ internal static unsafe class Game
                 if (anyKey)
                 {
                     gs.RingsDone      = 0;
+                    gs.ItemType       = 0;  // フィールドアイテム消去 (保持アイテムは持ち越し)
                     gs.RingTimer      = gs.TimeLimit;
                     gs.Fuel           = gs.InitialFuel;
                     gs.CountdownVal   = C.COUNTDOWN_START;
@@ -615,7 +641,11 @@ internal static unsafe class Game
                 int statLevel  = gs.TimeWarning != 0 ? 2 : gs.FuelWarning != 0 ? 1 : 0;
                 AudioSystem.StatusWarning(statLevel);
 
-                if (gs.Fuel < 0.0f) gs.Fuel = 0.0f;
+                if (gs.Fuel < 0.0f)
+                {
+                    if (gs.HasFuelItem) { gs.HasFuelItem = false; gs.Fuel = gs.InitialFuel; }
+                    else                { gs.Fuel = 0.0f; }
+                }
 
                 // DRAG_K = 0 のため速度減衰なし
 
@@ -647,6 +677,26 @@ internal static unsafe class Game
 
                 if (gs.ExcellentTimer > 0.0f) gs.ExcellentTimer -= dt;
 
+                // ボーナスアイテム接触 (アイテム半径8 + 船体半径8 = 16px)
+                if (gs.ItemType != 0)
+                {
+                    float itemDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.ItemPos));
+                    if (itemDist < 8.0f + C.SHIP_RADIUS)
+                    {
+                        if (gs.ItemType == 1) // 時間アイテム
+                        {
+                            if (gs.HasTimeItem) gs.Score += 300;
+                            else                gs.HasTimeItem = true;
+                        }
+                        else                   // 燃料アイテム
+                        {
+                            if (gs.HasFuelItem) gs.Score += 100;
+                            else                gs.HasFuelItem = true;
+                        }
+                        gs.ItemType = 0;
+                    }
+                }
+
                 // 中性子星への衝突 (半径4ピクセル)
                 if (gs.HasNeutronStar)
                 {
@@ -663,10 +713,14 @@ internal static unsafe class Game
                 gs.RingTimer -= dt;
                 if (gs.RingTimer <= 0.0f)
                 {
-                    gs.State        = GameStateEnum.Exploding;
-                    gs.ExplodeTimer = C.EXPLODE_DURATION;
-                    AudioSystem.PlayExplosion();
-                    goto doRender;
+                    if (gs.HasTimeItem) { gs.HasTimeItem = false; gs.RingTimer = gs.TimeLimit; }
+                    else
+                    {
+                        gs.State        = GameStateEnum.Exploding;
+                        gs.ExplodeTimer = C.EXPLODE_DURATION;
+                        AudioSystem.PlayExplosion();
+                        goto doRender;
+                    }
                 }
 
                 if (CheckRingHit(gs))
@@ -706,6 +760,8 @@ internal static unsafe class Game
                     else
                     {
                         SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
+                        if (gs.RingsDone == 2) SpawnBonusItem(gs);   // 3枠目出現と同時にアイテム出現
+                        if (gs.RingsDone == 3) gs.ItemType = 0;       // 3枠目クリアでアイテム消滅
                     }
                 }
             }
@@ -758,6 +814,7 @@ internal static unsafe class Game
 
             Renderer.RenderStars(gs.Pos, Stars);
             Renderer.RenderRing(ref gs.Ring, gs.Pos);
+            Renderer.RenderBonusItem(gs, gs.Pos);
             Renderer.RenderNeutronStar(gs, gs.Pos);
             Renderer.RenderHud(gs, ww, wh);
 

@@ -165,6 +165,43 @@ internal static class Renderer
         }
     }
 
+    // ボーナスアイテム: 白(時間) or 緑(燃料) の光点
+    public static void RenderBonusItem(GameState gs, Vec3 shipPos)
+    {
+        if (gs.ItemType == 0) return;
+
+        Vec3  delta = Vec3.TorusDelta(shipPos, gs.ItemPos);
+        float rx = delta.X, ry = delta.Y, rz = delta.Z;
+
+        bool isTime = (gs.ItemType == 1);
+
+        Gl.DepthMask(false);
+        Gl.Enable(EnableCap.PointSmooth);
+        Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
+
+        // 外側グロー
+        Gl.PointSize(28.0f);
+        if (isTime) Gl.Color4(0.85f, 0.85f, 1.0f, 0.14f);
+        else        Gl.Color4(0.0f,  0.80f, 0.0f, 0.14f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        // 中間グロー
+        Gl.PointSize(18.0f);
+        if (isTime) Gl.Color4(0.9f, 0.9f, 1.0f, 0.55f);
+        else        Gl.Color4(0.2f, 1.0f, 0.2f, 0.55f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        // コア (直径16px相当)
+        Gl.PointSize(16.0f);
+        if (isTime) Gl.Color4(1.0f, 1.0f, 1.0f, 1.0f);
+        else        Gl.Color4(0.7f, 1.0f, 0.7f, 1.0f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        Gl.Disable(EnableCap.PointSmooth);
+        Gl.PointSize(1.0f);
+        Gl.DepthMask(true);
+    }
+
     // 中性子星: 赤い光点 (最近傍トーラスコピーを1個描画)
     public static void RenderNeutronStar(GameState gs, Vec3 shipPos)
     {
@@ -399,6 +436,33 @@ internal static class Renderer
             float sb = (gs.Ship == ShipType.Standard) ? 0.8f : (gs.Ship == ShipType.Agile) ? 1.0f : 0.2f;
             Gl.Color3(sr, sg, sb);
             DrawString(mx + 14, fy2 + 16, cw * 0.75f, ch * 0.75f, slabels[(int)gs.Ship]);
+        }
+
+        // ===== アイテム保持インジケータ (タイマーバー右端あたり) =====
+        {
+            float ix = mx + barW + 52.0f;
+
+            // 時間アイテム (白)
+            if (gs.HasTimeItem) Gl.Color3(1.0f, 1.0f, 1.0f);
+            else                Gl.Color3(0.25f, 0.25f, 0.28f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(ix,       ty); Gl.Vertex2(ix + 10, ty);
+            Gl.Vertex2(ix + 10,  ty + 10); Gl.Vertex2(ix, ty + 10);
+            Gl.End();
+            if (gs.HasTimeItem) Gl.Color3(0.8f, 0.8f, 1.0f);
+            else                Gl.Color3(0.35f, 0.35f, 0.40f);
+            DrawString(ix + 12, ty, cw * 0.8f, ch * 0.8f, "TM");
+
+            // 燃料アイテム (緑)
+            if (gs.HasFuelItem) Gl.Color3(0.3f, 1.0f, 0.3f);
+            else                Gl.Color3(0.10f, 0.25f, 0.10f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(ix,       fy2); Gl.Vertex2(ix + 10, fy2);
+            Gl.Vertex2(ix + 10,  fy2 + 10); Gl.Vertex2(ix, fy2 + 10);
+            Gl.End();
+            if (gs.HasFuelItem) Gl.Color3(0.5f, 1.0f, 0.5f);
+            else                Gl.Color3(0.20f, 0.40f, 0.20f);
+            DrawString(ix + 12, fy2, cw * 0.8f, ch * 0.8f, "FL");
         }
 
         // ===== Right block: ring direction indicator =====

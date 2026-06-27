@@ -34,6 +34,10 @@ internal sealed class GameState
     public float         TimeLimit       = C.RING_TIME_LIMIT; // モード別制限時間
     public Vec3          NeutronStarPos  = default;           // 中性子星位置 (ステージ16以降)
     public bool          HasNeutronStar  = false;
+    public int           ItemType        = 0;    // 0=なし 1=時間(白) 2=燃料(緑)
+    public Vec3          ItemPos         = default;
+    public bool          HasTimeItem     = false; // 時間切れ回避アイテム保持
+    public bool          HasFuelItem     = false; // 燃料切れ回避アイテム保持
     public int           KonamiStep    = 0;   // コナミコマンド入力ステップ (0-9)
     public int           StageStart    = 1;   // 開始ステージ (チートで変更)
     public int           StageSel0     = 0;   // ステージセレクト 十の位
