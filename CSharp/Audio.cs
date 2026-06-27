@@ -334,6 +334,23 @@ internal static class AudioSystem
         PushUiNote(990f, 0.13f, 0.42f, 12f);
     }
 
+    // アイテム取得: 時間(1)=高音チャイム / 燃料(2)=中音チャイム
+    public static void PlayItemGet(int itemType)
+    {
+        if (s_uiStream == IntPtr.Zero) return;
+        ClearAudioStream(s_uiStream);
+        if (itemType == 1)
+        {
+            PushUiNote(659.3f, 0.06f, 0.42f, 20f); // E5
+            PushUiNote(987.8f, 0.14f, 0.48f,  9f); // B5
+        }
+        else
+        {
+            PushUiNote(392.0f, 0.06f, 0.40f, 20f); // G4
+            PushUiNote(587.3f, 0.14f, 0.46f,  9f); // D5
+        }
+    }
+
     // リング通過SE: 周波数が上昇するスイープ音
     // excellent=false: 500→1100Hz / 200ms (通常通過)
     // excellent=true : 700→2000Hz + オクターブ倍音 / 300ms (Excellent)

@@ -683,6 +683,7 @@ internal static unsafe class Game
                     float itemDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.ItemPos));
                     if (itemDist < 8.0f + C.SHIP_RADIUS)
                     {
+                        AudioSystem.PlayItemGet(gs.ItemType);
                         if (gs.ItemType == 1) // 時間アイテム
                         {
                             if (gs.HasTimeItem) gs.Score += 300;
