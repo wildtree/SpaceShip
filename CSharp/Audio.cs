@@ -25,16 +25,16 @@ internal static class AudioSystem
 
         var spec = new AudioSpec { Format = AudioFormat.AudioF32LE, Channels = 1, Freq = 22050 };
 
-        s_thrusterStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, ref spec, null, IntPtr.Zero);
+        s_thrusterStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_thrusterStream != IntPtr.Zero) ResumeAudioStreamDevice(s_thrusterStream);
 
-        s_warningStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, ref spec, null, IntPtr.Zero);
+        s_warningStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_warningStream != IntPtr.Zero) ResumeAudioStreamDevice(s_warningStream);
 
-        s_statusStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, ref spec, null, IntPtr.Zero);
+        s_statusStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_statusStream != IntPtr.Zero) ResumeAudioStreamDevice(s_statusStream);
 
-        s_countdownStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, ref spec, null, IntPtr.Zero);
+        s_countdownStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_countdownStream != IntPtr.Zero) ResumeAudioStreamDevice(s_countdownStream);
     }
 

@@ -1,3 +1,7 @@
+// Silk.NET.OpenGL.Legacy は固定機能パイプライン全体を [Obsolete] としているが、
+// このプロジェクトでは意図的に OpenGL 2.1 固定機能を使用するため警告を抑制する。
+#pragma warning disable CS0618
+
 using Silk.NET.OpenGL.Legacy;
 using static SDL3.SDL;
 

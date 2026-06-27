@@ -1,3 +1,5 @@
+#pragma warning disable CS0618  // Silk.NET.OpenGL.Legacy の固定機能API は意図的に使用
+
 using System;
 using Silk.NET.OpenGL.Legacy;
 using static SDL3.SDL;
@@ -462,8 +464,7 @@ internal static unsafe class Game
 
                 if (gs.Fuel < 0.0f) gs.Fuel = 0.0f;
 
-                if (C.DRAG_K > 0.0f)
-                    gs.Vel = Vec3.Add(gs.Vel, Vec3.Scale(gs.Vel, -C.DRAG_K * dt));
+                // DRAG_K = 0 のため速度減衰なし
 
                 // Ring update
                 if (gs.Ring.RotSpeed != 0.0f)
