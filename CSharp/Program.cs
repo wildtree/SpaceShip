@@ -299,12 +299,13 @@ internal static unsafe class Game
             // ---- Mode select ----
             if (gs.State == GameStateEnum.ModeSelect)
             {
-                if (keyUp)   gs.ModeSel = (gs.ModeSel + 2) % 3;
-                if (keyDown) gs.ModeSel = (gs.ModeSel + 1) % 3;
+                if (keyUp)   { gs.ModeSel = (gs.ModeSel + 2) % 3; AudioSystem.PlayUiSelect(); }
+                if (keyDown) { gs.ModeSel = (gs.ModeSel + 1) % 3; AudioSystem.PlayUiSelect(); }
                 if (keyEnter)
                 {
                     gs.State   = GameStateEnum.ShipSelect;
                     gs.ShipSel = (int)ShipType.Standard;
+                    AudioSystem.PlayUiConfirm();
                 }
                 goto doRender;
             }
@@ -312,10 +313,11 @@ internal static unsafe class Game
             // ---- Ship select ----
             if (gs.State == GameStateEnum.ShipSelect)
             {
-                if (keyUp)   gs.ShipSel = (gs.ShipSel + 2) % 3;
-                if (keyDown) gs.ShipSel = (gs.ShipSel + 1) % 3;
+                if (keyUp)   { gs.ShipSel = (gs.ShipSel + 2) % 3; AudioSystem.PlayUiSelect(); }
+                if (keyDown) { gs.ShipSel = (gs.ShipSel + 1) % 3; AudioSystem.PlayUiSelect(); }
                 if (keyEnter)
                 {
+                    AudioSystem.PlayUiConfirm();
                     GameMode chosenMode = (GameMode)gs.ModeSel;
                     ShipType chosenShip = (ShipType)gs.ShipSel;
                     int      rmi        = gs.RankingModeIdx;
@@ -372,6 +374,7 @@ internal static unsafe class Game
                         gs.EntryCh[0] = gs.EntryCh[1] = gs.EntryCh[2] = 'A';
                         gs.EntryCur   = 0;
                         gs.State      = GameStateEnum.Entry;
+                        AudioSystem.PlayJingleNewRecord();
                     }
                     else
                     {

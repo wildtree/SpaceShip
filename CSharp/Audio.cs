@@ -20,6 +20,7 @@ internal static class AudioSystem
     private static IntPtr s_countdownStream = IntPtr.Zero;
     private static IntPtr s_ringStream      = IntPtr.Zero; // リング通過SE専用
     private static IntPtr s_jingleStream   = IntPtr.Zero; // ジングル専用
+    private static IntPtr s_uiStream       = IntPtr.Zero; // メニューUI操作音専用
 
     public static void Init()
     {
@@ -44,6 +45,9 @@ internal static class AudioSystem
 
         s_jingleStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_jingleStream != IntPtr.Zero) ResumeAudioStreamDevice(s_jingleStream);
+
+        s_uiStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
+        if (s_uiStream != IntPtr.Zero) ResumeAudioStreamDevice(s_uiStream);
     }
 
     public static void Cleanup()
@@ -54,6 +58,7 @@ internal static class AudioSystem
         if (s_countdownStream != IntPtr.Zero) { DestroyAudioStream(s_countdownStream); s_countdownStream = IntPtr.Zero; }
         if (s_ringStream      != IntPtr.Zero) { DestroyAudioStream(s_ringStream);      s_ringStream      = IntPtr.Zero; }
         if (s_jingleStream    != IntPtr.Zero) { DestroyAudioStream(s_jingleStream);    s_jingleStream    = IntPtr.Zero; }
+        if (s_uiStream        != IntPtr.Zero) { DestroyAudioStream(s_uiStream);        s_uiStream        = IntPtr.Zero; }
     }
 
     private static unsafe void PushFloats(IntPtr stream, float[] buf, int count)
@@ -262,6 +267,20 @@ internal static class AudioSystem
         PushJingleNote(1046.5f, 0.55f, 0.65f,  3f, gapSec: 0f);
     }
 
+    // ニューレコード: G4→B4→D5→G5→D5→G5→B5 勝利ファンファーレ (クリアとは別フレーズ)
+    public static void PlayJingleNewRecord()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(392.0f, 0.07f, 0.45f, 20f, 0.20f, 0.005f);
+        PushJingleNote(493.9f, 0.07f, 0.45f, 20f, 0.20f, 0.005f);
+        PushJingleNote(587.3f, 0.07f, 0.45f, 20f, 0.20f, 0.005f);
+        PushJingleNote(784.0f, 0.07f, 0.50f, 20f, 0.20f, 0.005f);
+        PushJingleNote(587.3f, 0.07f, 0.48f, 20f, 0.20f, 0.005f);
+        PushJingleNote(784.0f, 0.08f, 0.50f, 18f, 0.20f, 0.010f);
+        PushJingleNote(987.8f, 0.50f, 0.62f,  3f, 0.25f, 0.000f);
+    }
+
     // ゲームオーバー: A4→F4→C4→A3 暗く下降するフレーズ
     public static void PlayJingleGameOver()
     {
@@ -271,6 +290,48 @@ internal static class AudioSystem
         PushJingleNote(349.2f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
         PushJingleNote(261.6f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
         PushJingleNote(220.0f, 0.80f, 0.55f, 2f, harmRatio: 0.15f, gapSec: 0f);
+    }
+
+    // ---- メニューUI操作音 ----
+
+    // サイン波1音をUIストリームに追加する内部ヘルパー
+    private static void PushUiNote(float freq, float dur, float vol, float decay)
+    {
+        if (s_uiStream == IntPtr.Zero) return;
+        const int SR = 22050;
+        int total = (int)(SR * dur);
+        float[] buf = new float[512];
+        float phase = 0f;
+        for (int pushed = 0; pushed < total; )
+        {
+            int batch = Math.Min(total - pushed, 512);
+            for (int i = 0; i < batch; i++)
+            {
+                float t = (float)(pushed + i) / SR;
+                buf[i] = MathF.Sin(phase * 2f * MathF.PI) * MathF.Exp(-decay * t) * vol;
+                phase += freq / SR;
+                if (phase >= 1f) phase -= 1f;
+            }
+            PushFloats(s_uiStream, buf, batch);
+            pushed += batch;
+        }
+    }
+
+    // 上下選択: 短い「ティック」音 (660Hz 40ms)
+    public static void PlayUiSelect()
+    {
+        if (s_uiStream == IntPtr.Zero) return;
+        ClearAudioStream(s_uiStream);
+        PushUiNote(660f, 0.04f, 0.30f, 40f);
+    }
+
+    // 決定: 上昇2音チャイム (660Hz→990Hz)
+    public static void PlayUiConfirm()
+    {
+        if (s_uiStream == IntPtr.Zero) return;
+        ClearAudioStream(s_uiStream);
+        PushUiNote(660f, 0.07f, 0.38f, 22f);
+        PushUiNote(990f, 0.13f, 0.42f, 12f);
     }
 
     // リング通過SE: 周波数が上昇するスイープ音
