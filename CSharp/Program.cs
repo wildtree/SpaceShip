@@ -402,7 +402,7 @@ internal static unsafe class Game
             {
                 if (keyUp)   { gs.ModeSel = (gs.ModeSel + 2) % 3; AudioSystem.PlayUiSelect(); }
                 if (keyDown) { gs.ModeSel = (gs.ModeSel + 1) % 3; AudioSystem.PlayUiSelect(); }
-                if (keyEnter)
+                if (keyEnter || keyKA)
                 {
                     gs.State   = GameStateEnum.ShipSelect;
                     gs.ShipSel = (int)ShipType.Standard;
@@ -416,7 +416,7 @@ internal static unsafe class Game
             {
                 if (keyUp)   { gs.ShipSel = (gs.ShipSel + 2) % 3; AudioSystem.PlayUiSelect(); }
                 if (keyDown) { gs.ShipSel = (gs.ShipSel + 1) % 3; AudioSystem.PlayUiSelect(); }
-                if (keyEnter)
+                if (keyEnter || keyKA)
                 {
                     AudioSystem.PlayUiConfirm();
                     GameMode chosenMode   = (GameMode)gs.ModeSel;
