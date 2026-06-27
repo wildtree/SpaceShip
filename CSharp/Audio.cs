@@ -339,15 +339,28 @@ internal static class AudioSystem
     {
         if (s_uiStream == IntPtr.Zero) return;
         ClearAudioStream(s_uiStream);
+
+        // リング通過音(~200ms)と重ならないよう220msの無音パディングを先頭に挿入
+        const int SR = 22050;
+        int silenceSamples = (int)(SR * 0.22f);
+        float[] silBuf = new float[512];
+        for (int pushed = 0; pushed < silenceSamples; )
+        {
+            int batch = Math.Min(silenceSamples - pushed, 512);
+            Array.Clear(silBuf, 0, batch);
+            PushFloats(s_uiStream, silBuf, batch);
+            pushed += batch;
+        }
+
         if (itemType == 1)
         {
-            PushUiNote(784.0f, 0.07f, 0.20f, 14f); // G5
-            PushUiNote(523.3f, 0.11f, 0.16f,  8f); // C5
+            PushUiNote(784.0f, 0.07f, 0.22f, 14f); // G5
+            PushUiNote(523.3f, 0.12f, 0.18f,  8f); // C5
         }
         else
         {
-            PushUiNote(466.2f, 0.07f, 0.20f, 14f); // Bb4
-            PushUiNote(311.1f, 0.11f, 0.16f,  8f); // Eb4
+            PushUiNote(466.2f, 0.07f, 0.22f, 14f); // Bb4
+            PushUiNote(311.1f, 0.12f, 0.18f,  8f); // Eb4
         }
     }
 

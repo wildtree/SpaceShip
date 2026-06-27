@@ -166,12 +166,19 @@ internal static class Renderer
     }
 
     // ボーナスアイテム: 白(時間) or 緑(燃料) の光点
-    public static void RenderBonusItem(GameState gs, Vec3 shipPos)
+    public static void RenderBonusItem(GameState gs, Vec3 shipPos, int screenH)
     {
         if (gs.ItemType == 0) return;
 
         Vec3  delta = Vec3.TorusDelta(shipPos, gs.ItemPos);
+        float dist  = MathF.Max(0.5f, Vec3.Len(delta));
         float rx = delta.X, ry = delta.Y, rz = delta.Z;
+
+        // 距離に応じた投影サイズ: radius_world * (screenH/2 / tan(FOV/2)) / dist
+        float focalLen = (screenH * 0.5f) / MathF.Tan(C.FOV_DEG * MathF.PI / 360.0f);
+        float coreSize  = Math.Clamp(8.0f * focalLen / dist, 2.0f, 120.0f);
+        float midSize   = Math.Clamp(coreSize * 1.7f,         3.0f, 120.0f);
+        float outerSize = Math.Clamp(coreSize * 2.8f,         4.0f, 120.0f);
 
         bool isTime = (gs.ItemType == 1);
 
@@ -180,19 +187,19 @@ internal static class Renderer
         Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
 
         // 外側グロー
-        Gl.PointSize(28.0f);
+        Gl.PointSize(outerSize);
         if (isTime) Gl.Color4(0.85f, 0.85f, 1.0f, 0.14f);
         else        Gl.Color4(0.0f,  0.80f, 0.0f, 0.14f);
         Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
 
         // 中間グロー
-        Gl.PointSize(18.0f);
+        Gl.PointSize(midSize);
         if (isTime) Gl.Color4(0.9f, 0.9f, 1.0f, 0.55f);
         else        Gl.Color4(0.2f, 1.0f, 0.2f, 0.55f);
         Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
 
-        // コア (直径16px相当)
-        Gl.PointSize(16.0f);
+        // コア
+        Gl.PointSize(coreSize);
         if (isTime) Gl.Color4(1.0f, 1.0f, 1.0f, 1.0f);
         else        Gl.Color4(0.7f, 1.0f, 0.7f, 1.0f);
         Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();

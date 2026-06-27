@@ -816,7 +816,7 @@ internal static unsafe class Game
 
             Renderer.RenderStars(gs.Pos, Stars);
             Renderer.RenderRing(ref gs.Ring, gs.Pos);
-            Renderer.RenderBonusItem(gs, gs.Pos);
+            Renderer.RenderBonusItem(gs, gs.Pos, wh);
             Renderer.RenderNeutronStar(gs, gs.Pos);
             Renderer.RenderHud(gs, ww, wh);
 
