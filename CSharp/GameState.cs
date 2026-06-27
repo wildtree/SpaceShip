@@ -30,6 +30,15 @@ internal sealed class GameState
     public ShipType      Ship            = ShipType.Standard;
     public int           ShipSel         = (int)ShipType.Standard;
     public int           RankingModeIdx  = 0;
+    public float         InitialFuel     = C.INITIAL_FUEL;    // モード別初期燃料
+    public float         TimeLimit       = C.RING_TIME_LIMIT; // モード別制限時間
+    public Vec3          NeutronStarPos  = default;           // 中性子星位置 (ステージ16以降)
+    public bool          HasNeutronStar  = false;
+    public int           KonamiStep    = 0;   // コナミコマンド入力ステップ (0-9)
+    public int           StageStart    = 1;   // 開始ステージ (チートで変更)
+    public int           StageSel0     = 0;   // ステージセレクト 十の位
+    public int           StageSel1     = 1;   // ステージセレクト 一の位
+    public int           StageSelCur   = 0;   // ステージセレクト カーソル位置
     public int           CollisionWarning = 0;
     public int           FuelWarning     = 0;
     public int           TimeWarning     = 0;

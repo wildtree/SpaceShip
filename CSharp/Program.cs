@@ -12,6 +12,10 @@ namespace SpaceShip
 
 internal static unsafe class Game
 {
+    // コナミコマンド: ↑↑↓↓←→←→BA
+    // 0=Up 1=Down 2=Left 3=Right 4=A(keyKA) 5=B(keyKB)
+    private static readonly int[] KonamiSeq = { 0, 0, 1, 1, 2, 3, 2, 3, 5, 4 };
+
     private static readonly Vec3[] Stars = new Vec3[C.STAR_COUNT];
     private static IntPtr s_gamepad = IntPtr.Zero;  // 現在使用中のゲームパッド
     private const short PAD_DEAD = 8000;            // スティックのデッドゾーン (~25%)
@@ -36,12 +40,18 @@ internal static unsafe class Game
         }
     }
 
-    private static void SpawnRing(ref Ring ring, int ringNum, int stage)
+    private static void SpawnRing(ref Ring ring, int ringNum, int stage,
+                                   bool hasNeutronStar = false, Vec3 nsPos = default)
     {
-        ring.Pos = new Vec3(
-            (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)),
-            (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)),
-            (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)));
+        const float NS_MIN_DIST = 200.0f;
+        do
+        {
+            ring.Pos = new Vec3(
+                (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)),
+                (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)),
+                (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)));
+        }
+        while (hasNeutronStar && Vec3.Len(Vec3.TorusDelta(ring.Pos, nsPos)) < NS_MIN_DIST);
 
         float theta = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
         float phi   = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
@@ -75,6 +85,16 @@ internal static unsafe class Game
             ring.MoveDir = new Vec3(0, 0, 0);
         }
         ring.ColorType = shouldMove ? 2 : (shouldRotate ? 1 : 0);
+    }
+
+    private static void SpawnNeutronStar(GameState gs)
+    {
+        if (gs.Stage < 16) { gs.HasNeutronStar = false; return; }
+        gs.NeutronStarPos = new Vec3(
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+        gs.HasNeutronStar = true;
     }
 
     private static int CheckRingPass(GameState gs)
@@ -217,6 +237,7 @@ internal static unsafe class Game
             bool anyKey  = false;
             bool keyUp   = false, keyDown  = false;
             bool keyLeft = false, keyRight = false, keyEnter = false;
+            bool keyKA   = false, keyKB    = false; // コナミコマンド用 A/B ボタン
 
             while (PollEvent(out Event ev))
             {
@@ -234,6 +255,10 @@ internal static unsafe class Game
                         case Keycode.Right:   keyRight = true; anyKey = true; break;
                         case Keycode.Return:
                         case Keycode.KpEnter: keyEnter = true; anyKey = true; break;
+                        case Keycode.Z:
+                        case Keycode.A:       keyKA    = true; anyKey = true; break;
+                        case Keycode.X:
+                        case Keycode.B:       keyKB    = true; anyKey = true; break;
                         default:              anyKey = true; break;
                     }
                 }
@@ -264,8 +289,9 @@ internal static unsafe class Game
                         case GamepadButton.DPadDown:  keyDown  = true; anyKey = true; break;
                         case GamepadButton.DPadLeft:  keyLeft  = true; anyKey = true; break;
                         case GamepadButton.DPadRight: keyRight = true; anyKey = true; break;
-                        case GamepadButton.South:     // A ボタン = 決定
+                        case GamepadButton.South:     keyEnter = true; keyKA = true; anyKey = true; break;
                         case GamepadButton.Start:     keyEnter = true; anyKey = true; break;
+                        case GamepadButton.East:      keyKB    = true; anyKey = true; break;
                         default:                      anyKey = true; break;
                     }
                 }
@@ -290,8 +316,57 @@ internal static unsafe class Game
                 }
                 if (anyKey)
                 {
-                    gs.State   = GameStateEnum.ModeSelect;
-                    gs.ModeSel = (int)GameMode.Normal;
+                    int pressed = keyUp    ? 0 : keyDown  ? 1 : keyLeft  ? 2 :
+                                  keyRight ? 3 : keyKA    ? 4 : keyKB    ? 5 : -1;
+                    if (pressed >= 0 && KonamiSeq[gs.KonamiStep] == pressed)
+                    {
+                        gs.KonamiStep++;
+                        if (gs.KonamiStep >= KonamiSeq.Length)
+                        {
+                            // コナミコマンド完成 → ステージセレクトへ
+                            gs.KonamiStep  = 0;
+                            gs.StageSel0   = 0;
+                            gs.StageSel1   = 1;
+                            gs.StageSelCur = 0;
+                            gs.State       = GameStateEnum.StageSelect;
+                            AudioSystem.PlayUiConfirm();
+                        }
+                        // else: タイトルに留まり続きを待つ
+                    }
+                    else
+                    {
+                        gs.KonamiStep = 0;
+                        gs.State      = GameStateEnum.ModeSelect;
+                        gs.ModeSel    = (int)GameMode.Normal;
+                    }
+                }
+                goto doRender;
+            }
+
+            // ---- Stage select (コナミコマンド後) ----
+            if (gs.State == GameStateEnum.StageSelect)
+            {
+                if (keyUp)
+                {
+                    if (gs.StageSelCur == 0) gs.StageSel0 = (gs.StageSel0 + 1) % 10;
+                    else                      gs.StageSel1 = (gs.StageSel1 + 1) % 10;
+                    AudioSystem.PlayUiSelect();
+                }
+                if (keyDown)
+                {
+                    if (gs.StageSelCur == 0) gs.StageSel0 = (gs.StageSel0 + 9) % 10;
+                    else                      gs.StageSel1 = (gs.StageSel1 + 9) % 10;
+                    AudioSystem.PlayUiSelect();
+                }
+                if (keyRight && gs.StageSelCur == 0) { gs.StageSelCur = 1; AudioSystem.PlayUiSelect(); }
+                if (keyLeft  && gs.StageSelCur == 1) { gs.StageSelCur = 0; AudioSystem.PlayUiSelect(); }
+                if (keyEnter)
+                {
+                    int stageNum = gs.StageSel0 * 10 + gs.StageSel1;
+                    gs.StageStart = Math.Max(1, Math.Min(99, stageNum));
+                    gs.State      = GameStateEnum.ModeSelect;
+                    gs.ModeSel    = (int)GameMode.Normal;
+                    AudioSystem.PlayUiConfirm();
                 }
                 goto doRender;
             }
@@ -318,17 +393,21 @@ internal static unsafe class Game
                 if (keyEnter)
                 {
                     AudioSystem.PlayUiConfirm();
-                    GameMode chosenMode = (GameMode)gs.ModeSel;
-                    ShipType chosenShip = (ShipType)gs.ShipSel;
-                    int      rmi        = gs.RankingModeIdx;
+                    GameMode chosenMode   = (GameMode)gs.ModeSel;
+                    ShipType chosenShip   = (ShipType)gs.ShipSel;
+                    int      rmi          = gs.RankingModeIdx;
+                    int      stageStart   = gs.StageStart;
                     gs = new GameState();
+                    gs.InitialFuel      = chosenMode == GameMode.Easy ? 500.0f : C.INITIAL_FUEL;
+                    gs.TimeLimit        = chosenMode == GameMode.Hard ? 45.0f  : C.RING_TIME_LIMIT;
                     gs.Pos              = new Vec3(512, 512, 512);
                     gs.Fwd              = new Vec3(0, 0, 1);
                     gs.Up               = new Vec3(0, 1, 0);
-                    gs.Fuel             = C.INITIAL_FUEL;
+                    gs.Fuel             = gs.InitialFuel;
                     gs.PrevPos          = gs.Pos;
-                    gs.RingTimer        = C.RING_TIME_LIMIT;
-                    gs.Stage            = 1;
+                    gs.RingTimer        = gs.TimeLimit;
+                    gs.Stage            = stageStart;
+                    gs.StageStart       = stageStart;
                     gs.CountdownVal     = C.COUNTDOWN_START;
                     gs.CountdownLastN   = (int)C.COUNTDOWN_START + 1;
                     gs.Mode             = chosenMode;
@@ -336,7 +415,8 @@ internal static unsafe class Game
                     gs.RankingModeIdx   = rmi;
                     gs.State            = GameStateEnum.Countdown;
                     AudioSystem.PlayJingleStart();
-                    SpawnRing(ref gs.Ring, 1, 1);
+                    SpawnNeutronStar(gs);
+                    SpawnRing(ref gs.Ring, 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
                 }
                 goto doRender;
             }
@@ -428,13 +508,14 @@ internal static unsafe class Game
                 if (anyKey)
                 {
                     gs.RingsDone      = 0;
-                    gs.RingTimer      = C.RING_TIME_LIMIT;
-                    gs.Fuel           = C.INITIAL_FUEL;
+                    gs.RingTimer      = gs.TimeLimit;
+                    gs.Fuel           = gs.InitialFuel;
                     gs.CountdownVal   = C.COUNTDOWN_START;
                     gs.CountdownLastN = (int)C.COUNTDOWN_START + 1;
                     gs.State          = GameStateEnum.Countdown;
                     AudioSystem.PlayJingleStart();
-                    SpawnRing(ref gs.Ring, 1, gs.Stage);
+                    SpawnNeutronStar(gs);
+                    SpawnRing(ref gs.Ring, 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
                 }
                 goto doRender;
             }
@@ -528,7 +609,7 @@ internal static unsafe class Game
                 gs.CollisionWarning = PredictCollision(gs) ? 1 : 0;
                 AudioSystem.WarningTone(gs.CollisionWarning != 0);
 
-                gs.FuelWarning = (gs.Fuel <= C.INITIAL_FUEL * 0.30f) ? 1 : 0;
+                gs.FuelWarning = (gs.Fuel <= gs.InitialFuel * 0.30f) ? 1 : 0;
                 gs.TimeWarning = (gs.RingTimer <= 10.0f) ? 1 : 0;
                 int statLevel  = gs.TimeWarning != 0 ? 2 : gs.FuelWarning != 0 ? 1 : 0;
                 AudioSystem.StatusWarning(statLevel);
@@ -547,10 +628,36 @@ internal static unsafe class Game
                 if (gs.Ring.MoveSpeed > 0.0f)
                     gs.Ring.Pos = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.MoveDir, gs.Ring.MoveSpeed * dt)));
 
+                // 中性子星重力 (ステージ16以降)
+                if (gs.HasNeutronStar)
+                {
+                    Vec3  nsDelta = Vec3.TorusDelta(gs.Pos, gs.NeutronStarPos);
+                    float nsDist  = Vec3.Len(nsDelta);
+                    if (nsDist > 0.001f)
+                    {
+                        float r    = nsDist / 100.0f;
+                        float gAcc = 36.0f / (r * r);
+                        gs.Vel = Vec3.Add(gs.Vel, Vec3.Scale(Vec3.Norm(nsDelta), gAcc * dt));
+                    }
+                }
+
                 gs.PrevPos = gs.Pos;
                 gs.Pos     = Vec3.Wrap(Vec3.Add(gs.Pos, Vec3.Scale(gs.Vel, dt)));
 
                 if (gs.ExcellentTimer > 0.0f) gs.ExcellentTimer -= dt;
+
+                // 中性子星への衝突 (半径4ピクセル)
+                if (gs.HasNeutronStar)
+                {
+                    float nsDist2 = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.NeutronStarPos));
+                    if (nsDist2 < 4.0f + C.SHIP_RADIUS)
+                    {
+                        gs.State        = GameStateEnum.Exploding;
+                        gs.ExplodeTimer = C.EXPLODE_DURATION;
+                        AudioSystem.PlayExplosion();
+                        goto doRender;
+                    }
+                }
 
                 gs.RingTimer -= dt;
                 if (gs.RingTimer <= 0.0f)
@@ -584,7 +691,7 @@ internal static unsafe class Game
                     AudioSystem.PlayRingPass(passResult == 2);
                     gs.Score     += ringScore;
                     gs.RingsDone++;
-                    gs.RingTimer = C.RING_TIME_LIMIT;
+                    gs.RingTimer = gs.TimeLimit;
 
                     if (gs.RingsDone >= C.RINGS_PER_STAGE)
                     {
@@ -597,7 +704,7 @@ internal static unsafe class Game
                     }
                     else
                     {
-                        SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage);
+                        SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
                     }
                 }
             }
@@ -650,6 +757,7 @@ internal static unsafe class Game
 
             Renderer.RenderStars(gs.Pos, Stars);
             Renderer.RenderRing(ref gs.Ring, gs.Pos);
+            Renderer.RenderNeutronStar(gs, gs.Pos);
             Renderer.RenderHud(gs, ww, wh);
 
             GLSwapWindow(window);

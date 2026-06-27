@@ -165,6 +165,36 @@ internal static class Renderer
         }
     }
 
+    // 中性子星: 赤い光点 (最近傍トーラスコピーを1個描画)
+    public static void RenderNeutronStar(GameState gs, Vec3 shipPos)
+    {
+        if (!gs.HasNeutronStar) return;
+
+        Vec3  delta = Vec3.TorusDelta(shipPos, gs.NeutronStarPos);
+        float rx = delta.X, ry = delta.Y, rz = delta.Z;
+
+        Gl.Enable(EnableCap.PointSmooth);
+        Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
+
+        // 外側グロー (大, 半透明赤)
+        Gl.PointSize(20.0f);
+        Gl.Color4(0.8f, 0.0f, 0.0f, 0.18f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        // 中間グロー
+        Gl.PointSize(11.0f);
+        Gl.Color4(1.0f, 0.12f, 0.0f, 0.60f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        // コア (明るい赤白)
+        Gl.PointSize(5.0f);
+        Gl.Color4(1.0f, 0.85f, 0.85f, 1.0f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rx, ry, rz); Gl.End();
+
+        Gl.Disable(EnableCap.PointSmooth);
+        Gl.PointSize(1.0f);
+    }
+
     // ==================== HUD helpers ====================
     private static void RenderCockpit(int w, int h, float panelY)
     {
@@ -321,7 +351,7 @@ internal static class Renderer
 
         // Fuel bar
         float fy2  = panelY + 38.0f;
-        float frac = gs.Fuel / C.INITIAL_FUEL;
+        float frac = gs.Fuel / gs.InitialFuel;
         if (frac < 0) frac = 0;
 
         Gl.Color3(0.15f, 0.15f, 0.18f);
@@ -526,6 +556,60 @@ internal static class Renderer
             Gl.Color3(0.5f, 0.65f, 0.85f);
             DrawString(fw * 0.5f - 126, byy + bch2 + 16, 7.5f, 11.0f, "UP/DN:CHANGE  LR:MOVE");
             DrawString(fw * 0.5f - 68,  byy + bch2 + 34, 7.5f, 11.0f, "ENTER:DECIDE");
+        }
+
+        // ---- Stage select (コナミコマンド後) ----
+        if (gs.State == GameStateEnum.StageSelect)
+        {
+            Gl.Color4(0.0f, 0.0f, 0.0f, 0.82f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(0, 0); Gl.Vertex2(fw, 0); Gl.Vertex2(fw, fh); Gl.Vertex2(0, fh);
+            Gl.End();
+
+            float cy  = fh * 0.5f - 80.0f;
+            Gl.Color3(0.3f, 1.0f, 0.5f);
+            DrawString(fw * 0.5f - 78, cy, 10.0f, 16.0f, "STAGE SELECT");
+
+            int stageNum = gs.StageSel0 * 10 + gs.StageSel1;
+            string hint = stageNum < 1 ? "(invalid)" : $"= STAGE {stageNum:D2}";
+            Gl.Color3(0.55f, 0.75f, 0.55f);
+            DrawString(fw * 0.5f - (float)hint.Length * 7 * 0.5f, cy + 26, 7.0f, 11.0f, hint);
+
+            float bcw  = 40.0f, bch = 60.0f, bsp = 14.0f;
+            float bx0  = fw * 0.5f - (2 * bcw + bsp) * 0.5f;
+            float byy  = cy + 52.0f;
+            ulong blink = GetTicks() / 400;
+
+            for (int i = 0; i < 2; i++)
+            {
+                float bx   = bx0 + i * (bcw + bsp);
+                bool  isCur = (i == gs.StageSelCur);
+                int   digit = (i == 0) ? gs.StageSel0 : gs.StageSel1;
+
+                Gl.Color4(0.02f, isCur ? 0.12f : 0.04f, 0.04f, 1.0f);
+                Gl.Begin(PrimitiveType.Quads);
+                Gl.Vertex2(bx - 2, byy - 2); Gl.Vertex2(bx + bcw + 2, byy - 2);
+                Gl.Vertex2(bx + bcw + 2, byy + bch + 2); Gl.Vertex2(bx - 2, byy + bch + 2);
+                Gl.End();
+
+                if (isCur && (blink & 1) != 0)
+                    Gl.Color3(0.3f, 1.0f, 0.4f);
+                else
+                    Gl.Color3(0.15f, isCur ? 0.8f : 0.4f, 0.2f);
+                Gl.LineWidth(isCur ? 2.5f : 1.5f);
+                Gl.Begin(PrimitiveType.LineLoop);
+                Gl.Vertex2(bx - 2, byy - 2); Gl.Vertex2(bx + bcw + 2, byy - 2);
+                Gl.Vertex2(bx + bcw + 2, byy + bch + 2); Gl.Vertex2(bx - 2, byy + bch + 2);
+                Gl.End();
+                Gl.LineWidth(1.0f);
+
+                Gl.Color3(isCur ? 0.4f : 0.25f, isCur ? 1.0f : 0.75f, isCur ? 0.4f : 0.3f);
+                DrawString(bx + 1, byy + 5, bcw - 2, bch - 10, digit.ToString());
+            }
+
+            Gl.Color3(0.45f, 0.65f, 0.55f);
+            DrawString(fw * 0.5f - 124, byy + bch + 16, 7.5f, 11.0f, "UP/DN:CHANGE  LR:MOVE");
+            DrawString(fw * 0.5f - 68,  byy + bch + 34, 7.5f, 11.0f, "ENTER:DECIDE");
         }
 
         // ---- Game over ----

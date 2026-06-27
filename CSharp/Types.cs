@@ -130,6 +130,7 @@ internal enum GameStateEnum
 {
     Title,
     Ranking,
+    StageSelect,  // コナミコマンド後のステージ選択
     ModeSelect,
     ShipSelect,
     Countdown,
