@@ -20,6 +20,7 @@ internal static class AudioSystem
     private static IntPtr s_countdownStream = IntPtr.Zero;
     private static IntPtr s_ringStream      = IntPtr.Zero; // リング通過SE専用
     private static IntPtr s_jingleStream   = IntPtr.Zero; // ジングル専用
+    private static IntPtr s_bonusStream    = IntPtr.Zero; // ボーナスジングル専用 (s_jingleStreamに割り込まれない)
     private static IntPtr s_uiStream       = IntPtr.Zero; // メニューUI操作音専用
 
     public static void Init()
@@ -46,6 +47,9 @@ internal static class AudioSystem
         s_jingleStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_jingleStream != IntPtr.Zero) ResumeAudioStreamDevice(s_jingleStream);
 
+        s_bonusStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
+        if (s_bonusStream != IntPtr.Zero) ResumeAudioStreamDevice(s_bonusStream);
+
         s_uiStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_uiStream != IntPtr.Zero) ResumeAudioStreamDevice(s_uiStream);
     }
@@ -58,6 +62,7 @@ internal static class AudioSystem
         if (s_countdownStream != IntPtr.Zero) { DestroyAudioStream(s_countdownStream); s_countdownStream = IntPtr.Zero; }
         if (s_ringStream      != IntPtr.Zero) { DestroyAudioStream(s_ringStream);      s_ringStream      = IntPtr.Zero; }
         if (s_jingleStream    != IntPtr.Zero) { DestroyAudioStream(s_jingleStream);    s_jingleStream    = IntPtr.Zero; }
+        if (s_bonusStream     != IntPtr.Zero) { DestroyAudioStream(s_bonusStream);     s_bonusStream     = IntPtr.Zero; }
         if (s_uiStream        != IntPtr.Zero) { DestroyAudioStream(s_uiStream);        s_uiStream        = IntPtr.Zero; }
     }
 
@@ -244,6 +249,43 @@ internal static class AudioSystem
         }
     }
 
+    // ボーナスジングル専用ノートヘルパー (s_bonusStream に書き込む)
+    private static void PushBonusNote(float freq, float dur, float vol, float decay,
+                                       float harmRatio = 0.25f, float gapSec = 0.015f)
+    {
+        if (s_bonusStream == IntPtr.Zero) return;
+        const int SR = 22050;
+        int noteSamples = (int)(SR * dur);
+        int gapSamples  = (int)(SR * gapSec);
+        float[] buf = new float[512];
+
+        float phase = 0f;
+        for (int pushed = 0; pushed < noteSamples; )
+        {
+            int batch = Math.Min(noteSamples - pushed, 512);
+            for (int i = 0; i < batch; i++)
+            {
+                float t   = (float)(pushed + i) / SR;
+                float env = MathF.Exp(-decay * t);
+                float s   = MathF.Sin(phase       * 2f * MathF.PI)
+                          + harmRatio * MathF.Sin(phase * 3f * MathF.PI);
+                phase += freq / SR;
+                if (phase >= 1f) phase -= 1f;
+                buf[i] = s * env * vol;
+            }
+            PushFloats(s_bonusStream, buf, batch);
+            pushed += batch;
+        }
+
+        for (int pushed = 0; pushed < gapSamples; )
+        {
+            int batch = Math.Min(gapSamples - pushed, 512);
+            Array.Clear(buf, 0, batch);
+            PushFloats(s_bonusStream, buf, batch);
+            pushed += batch;
+        }
+    }
+
     // ステージ開始: C5→E5→G5→C6 上昇ファンファーレ (元気に)
     public static void PlayJingleStart()
     {
@@ -286,6 +328,7 @@ internal static class AudioSystem
     {
         if (s_jingleStream == IntPtr.Zero) return;
         ClearAudioStream(s_jingleStream);
+        if (s_bonusStream != IntPtr.Zero) ClearAudioStream(s_bonusStream); // ボーナスジングルも止める
         PushJingleNote(440.0f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
         PushJingleNote(349.2f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
         PushJingleNote(261.6f, 0.28f, 0.50f, 4f, harmRatio: 0.15f, gapSec: 0.03f);
@@ -293,42 +336,45 @@ internal static class AudioSystem
     }
 
     // ボーナスステージクリア: G4→B4→D5→G5→B5→D6→G6 盛大なGメジャーファンファーレ
+    // ※ s_bonusStream を使うため PlayJingleStart の ClearAudioStream に割り込まれない
     public static void PlayJingleBonusClear()
     {
-        if (s_jingleStream == IntPtr.Zero) return;
-        ClearAudioStream(s_jingleStream);
-        PushJingleNote(392.0f,  0.06f, 0.50f, 20f, 0.15f, 0.004f); // G4
-        PushJingleNote(493.9f,  0.06f, 0.52f, 20f, 0.15f, 0.004f); // B4
-        PushJingleNote(587.3f,  0.06f, 0.54f, 20f, 0.15f, 0.004f); // D5
-        PushJingleNote(784.0f,  0.06f, 0.56f, 20f, 0.18f, 0.004f); // G5
-        PushJingleNote(987.8f,  0.06f, 0.60f, 20f, 0.20f, 0.004f); // B5
-        PushJingleNote(1174.7f, 0.06f, 0.63f, 20f, 0.22f, 0.004f); // D6
-        PushJingleNote(1568.0f, 0.80f, 0.75f,  2f, 0.28f, 0.000f); // G6 (ビッグホールド)
+        if (s_bonusStream == IntPtr.Zero) return;
+        ClearAudioStream(s_bonusStream);
+        PushBonusNote(392.0f,  0.08f, 0.55f, 18f, 0.15f, 0.005f); // G4
+        PushBonusNote(493.9f,  0.08f, 0.57f, 18f, 0.15f, 0.005f); // B4
+        PushBonusNote(587.3f,  0.08f, 0.59f, 18f, 0.15f, 0.005f); // D5
+        PushBonusNote(784.0f,  0.08f, 0.62f, 18f, 0.18f, 0.005f); // G5
+        PushBonusNote(987.8f,  0.08f, 0.65f, 18f, 0.20f, 0.005f); // B5
+        PushBonusNote(1174.7f, 0.08f, 0.68f, 18f, 0.22f, 0.005f); // D6
+        PushBonusNote(1568.0f, 1.00f, 0.80f,  2f, 0.28f, 0.000f); // G6 (ビッグホールド)
     }
 
     // ボーナスステージ失敗: A4→G4→E4→D4→A3 物悲しい短調の下降フレーズ
+    // ※ s_bonusStream を使うため他のジングルに割り込まれない
     public static void PlayJingleBonusFailed()
     {
-        if (s_jingleStream == IntPtr.Zero) return;
-        ClearAudioStream(s_jingleStream);
-        PushJingleNote(440.0f, 0.28f, 0.45f, 5f, 0.22f, 0.04f); // A4
-        PushJingleNote(392.0f, 0.28f, 0.42f, 5f, 0.22f, 0.04f); // G4
-        PushJingleNote(329.6f, 0.28f, 0.40f, 5f, 0.22f, 0.04f); // E4
-        PushJingleNote(293.7f, 0.30f, 0.38f, 4f, 0.22f, 0.04f); // D4
-        PushJingleNote(220.0f, 0.95f, 0.45f, 2f, 0.28f, 0.000f); // A3 (長いホールド)
+        if (s_bonusStream == IntPtr.Zero) return;
+        ClearAudioStream(s_bonusStream);
+        PushBonusNote(440.0f, 0.28f, 0.45f, 5f, 0.22f, 0.04f); // A4
+        PushBonusNote(392.0f, 0.28f, 0.42f, 5f, 0.22f, 0.04f); // G4
+        PushBonusNote(329.6f, 0.28f, 0.40f, 5f, 0.22f, 0.04f); // E4
+        PushBonusNote(293.7f, 0.30f, 0.38f, 4f, 0.22f, 0.04f); // D4
+        PushBonusNote(220.0f, 0.95f, 0.45f, 2f, 0.28f, 0.000f); // A3 (長いホールド)
     }
 
     // ボーナスステージ開始: C5→E5→G5→C6→E6→G6 高速上昇ファンファーレ
+    // ※ s_bonusStream を使うため PlayJingleClear の余韻と同時に鳴り、互いを消さない
     public static void PlayJingleBonusStart()
     {
-        if (s_jingleStream == IntPtr.Zero) return;
-        ClearAudioStream(s_jingleStream);
-        PushJingleNote(523.3f,  0.05f, 0.45f, 22f, 0.15f, 0.003f); // C5
-        PushJingleNote(659.3f,  0.05f, 0.50f, 22f, 0.15f, 0.003f); // E5
-        PushJingleNote(784.0f,  0.05f, 0.52f, 22f, 0.15f, 0.003f); // G5
-        PushJingleNote(1046.5f, 0.05f, 0.55f, 22f, 0.18f, 0.003f); // C6
-        PushJingleNote(1318.5f, 0.05f, 0.58f, 22f, 0.20f, 0.008f); // E6
-        PushJingleNote(1568.0f, 0.65f, 0.70f,  3f, 0.25f, 0.000f); // G6 (ビッグホールド)
+        if (s_bonusStream == IntPtr.Zero) return;
+        ClearAudioStream(s_bonusStream);
+        PushBonusNote(523.3f,  0.08f, 0.50f, 18f, 0.15f, 0.005f); // C5
+        PushBonusNote(659.3f,  0.08f, 0.55f, 18f, 0.15f, 0.005f); // E5
+        PushBonusNote(784.0f,  0.08f, 0.58f, 18f, 0.15f, 0.005f); // G5
+        PushBonusNote(1046.5f, 0.08f, 0.62f, 18f, 0.18f, 0.005f); // C6
+        PushBonusNote(1318.5f, 0.08f, 0.65f, 18f, 0.20f, 0.010f); // E6
+        PushBonusNote(1568.0f, 0.80f, 0.78f,  3f, 0.25f, 0.000f); // G6 (ビッグホールド)
     }
 
     // ---- メニューUI操作音 ----
