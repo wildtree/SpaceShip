@@ -174,7 +174,7 @@ internal static unsafe class Game
         gs.HasTimeItem     = false;
         gs.HasFuelItem     = false;
         // ボーナスはステージ番号を消費しない (gs.Stage はそのまま)
-        gs.WaitRelease = true; // 燃料/時間切れ直後のキー入力を引き継がない
+        gs.StageClearTimer = 30f; // キー待ちなし: 30秒表示後に自動進行
         gs.State = GameStateEnum.StageClear;
         AudioSystem.PlayJingleBonusFailed();
     }
@@ -644,7 +644,18 @@ internal static unsafe class Game
             // ---- Stage clear ----
             if (gs.State == GameStateEnum.StageClear)
             {
-                if (anyKey)
+                bool advance;
+                if (gs.IsBonusStage)
+                {
+                    // ボーナスサマリーはキー待ちなし: タイマーで自動進行
+                    gs.StageClearTimer -= dt;
+                    advance = gs.StageClearTimer <= 0f;
+                }
+                else
+                {
+                    advance = anyKey;
+                }
+                if (advance)
                 {
                     gs.RingsDone      = 0;
                     gs.ItemType       = 0;  // フィールドアイテム消去 (保持アイテムは持ち越し)
@@ -885,7 +896,7 @@ internal static unsafe class Game
                         int fuelBonus     = (int)gs.Fuel;
                         gs.Score         += fuelBonus;
                         gs.StageFuelBonus = fuelBonus;
-                        if (gs.IsBonusStage) gs.WaitRelease = true; // リング通過直後キー引き継ぎ防止
+                        if (gs.IsBonusStage) gs.StageClearTimer = 30f; // キー待ちなし: 30秒表示後に自動進行
                         gs.State = GameStateEnum.StageClear;
                         if (gs.IsBonusStage) AudioSystem.PlayJingleBonusClear();
                         else                 AudioSystem.PlayJingleClear();
