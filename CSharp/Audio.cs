@@ -292,6 +292,32 @@ internal static class AudioSystem
         PushJingleNote(220.0f, 0.80f, 0.55f, 2f, harmRatio: 0.15f, gapSec: 0f);
     }
 
+    // ボーナスステージクリア: G4→B4→D5→G5→B5→D6→G6 盛大なGメジャーファンファーレ
+    public static void PlayJingleBonusClear()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(392.0f,  0.06f, 0.50f, 20f, 0.15f, 0.004f); // G4
+        PushJingleNote(493.9f,  0.06f, 0.52f, 20f, 0.15f, 0.004f); // B4
+        PushJingleNote(587.3f,  0.06f, 0.54f, 20f, 0.15f, 0.004f); // D5
+        PushJingleNote(784.0f,  0.06f, 0.56f, 20f, 0.18f, 0.004f); // G5
+        PushJingleNote(987.8f,  0.06f, 0.60f, 20f, 0.20f, 0.004f); // B5
+        PushJingleNote(1174.7f, 0.06f, 0.63f, 20f, 0.22f, 0.004f); // D6
+        PushJingleNote(1568.0f, 0.80f, 0.75f,  2f, 0.28f, 0.000f); // G6 (ビッグホールド)
+    }
+
+    // ボーナスステージ失敗: A4→G4→E4→D4→A3 物悲しい短調の下降フレーズ
+    public static void PlayJingleBonusFailed()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(440.0f, 0.28f, 0.45f, 5f, 0.22f, 0.04f); // A4
+        PushJingleNote(392.0f, 0.28f, 0.42f, 5f, 0.22f, 0.04f); // G4
+        PushJingleNote(329.6f, 0.28f, 0.40f, 5f, 0.22f, 0.04f); // E4
+        PushJingleNote(293.7f, 0.30f, 0.38f, 4f, 0.22f, 0.04f); // D4
+        PushJingleNote(220.0f, 0.95f, 0.45f, 2f, 0.28f, 0.000f); // A3 (長いホールド)
+    }
+
     // ボーナスステージ開始: C5→E5→G5→C6→E6→G6 高速上昇ファンファーレ
     public static void PlayJingleBonusStart()
     {

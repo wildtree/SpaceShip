@@ -164,14 +164,33 @@ internal static unsafe class Game
         ring.ColorType = move ? 2 : (rot ? 1 : 0);
     }
 
+    // ボーナスステージ失敗: 得点なしでステージ終了
+    private static void FailBonusStage(GameState gs)
+    {
+        gs.BonusFailed     = true;
+        gs.SpeedBonusScore = 0;
+        gs.StageFuelBonus  = 0;
+        gs.ItemType        = 0;
+        gs.HasTimeItem     = false;
+        gs.HasFuelItem     = false;
+        // ボーナスはステージ番号を消費しない (gs.Stage はそのまま)
+        gs.WaitRelease = true; // 燃料/時間切れ直後のキー入力を引き継がない
+        gs.State = GameStateEnum.StageClear;
+        AudioSystem.PlayJingleBonusFailed();
+    }
+
     // 次ステージを開始: ボーナスステージ判定 → BonusIntro or Countdown
     private static void StartNextStage(GameState gs)
     {
+        gs.BonusFailed = false;
+        gs.Vel         = new Vec3(0, 0, 0); // 各ステージ開始時に速度リセット
         SpawnNeutronStar(gs);
-        if (gs.Stage % 5 == 0)
+        if (gs.PendingBonus)
         {
+            gs.PendingBonus  = false;
             gs.IsBonusStage  = true;
-            gs.BonusStageNum = gs.Stage / 5;
+            gs.BonusStageNum++;
+            gs.WaitRelease   = true; // 直前のキー入力を引き継がないよう解放待ち
             SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.HasNeutronStar, gs.NeutronStarPos);
             gs.State = GameStateEnum.BonusIntro;
             AudioSystem.PlayJingleBonusStart();
@@ -383,6 +402,29 @@ internal static unsafe class Game
                         default:                      anyKey = true; break;
                     }
                 }
+            }
+
+            // ---- キー全解放待機 ----
+            // ボーナスステージ前後はアクセルを押しっぱなしの可能性があるため、
+            // 全キーが物理的に離されるまで anyKey を無効化する
+            if (gs.WaitRelease)
+            {
+                var ks = GetKeyboardState(out _);
+                bool held = ks[(int)Scancode.Z]      || ks[(int)Scancode.A]      ||
+                            ks[(int)Scancode.X]      || ks[(int)Scancode.B]      ||
+                            ks[(int)Scancode.Space]  || ks[(int)Scancode.Return]  ||
+                            ks[(int)Scancode.Up]     || ks[(int)Scancode.Down]    ||
+                            ks[(int)Scancode.Left]   || ks[(int)Scancode.Right];
+                if (s_gamepad != IntPtr.Zero)
+                    held |= GetGamepadButton(s_gamepad, GamepadButton.South) ||
+                            GetGamepadButton(s_gamepad, GamepadButton.East)  ||
+                            GetGamepadButton(s_gamepad, GamepadButton.Start) ||
+                            GetGamepadButton(s_gamepad, GamepadButton.DPadUp)   ||
+                            GetGamepadButton(s_gamepad, GamepadButton.DPadDown) ||
+                            GetGamepadButton(s_gamepad, GamepadButton.DPadLeft) ||
+                            GetGamepadButton(s_gamepad, GamepadButton.DPadRight);
+                if (held) anyKey = false;
+                else      gs.WaitRelease = false;
             }
 
             // ---- Title / Ranking ----
@@ -711,8 +753,9 @@ internal static unsafe class Game
 
                 if (gs.Fuel < 0.0f)
                 {
-                    if (gs.HasFuelItem) { gs.HasFuelItem = false; gs.Fuel = gs.InitialFuel; }
-                    else                { gs.Fuel = 0.0f; }
+                    if (gs.HasFuelItem)    { gs.HasFuelItem = false; gs.Fuel = gs.InitialFuel; }
+                    else if (gs.IsBonusStage) { FailBonusStage(gs); goto doRender; }
+                    else                   { gs.Fuel = 0.0f; }
                 }
 
                 // DRAG_K = 0 のため速度減衰なし
@@ -782,7 +825,8 @@ internal static unsafe class Game
                 gs.RingTimer -= dt;
                 if (gs.RingTimer <= 0.0f)
                 {
-                    if (gs.HasTimeItem) { gs.HasTimeItem = false; gs.RingTimer = gs.TimeLimit; }
+                    if (gs.HasTimeItem)    { gs.HasTimeItem = false; gs.RingTimer = gs.TimeLimit; }
+                    else if (gs.IsBonusStage) { FailBonusStage(gs); goto doRender; }
                     else
                     {
                         gs.State        = GameStateEnum.Exploding;
@@ -822,6 +866,7 @@ internal static unsafe class Game
                     {
                         if (gs.IsBonusStage)
                         {
+                            // ボーナスはステージ番号を消費しない
                             float spd = Vec3.Len(gs.Vel);
                             gs.SpeedBonusScore = spd >= 400 ? 1000
                                                : spd >= 300 ? 700
@@ -831,12 +876,19 @@ internal static unsafe class Game
                                                : 0;
                             gs.Score += gs.SpeedBonusScore;
                         }
+                        else
+                        {
+                            // 通常ステージ: ステージ番号を進め、5の倍数ならボーナスを予約
+                            if (gs.Stage % 5 == 0) gs.PendingBonus = true;
+                            gs.Stage++;
+                        }
                         int fuelBonus     = (int)gs.Fuel;
                         gs.Score         += fuelBonus;
                         gs.StageFuelBonus = fuelBonus;
-                        gs.Stage++;
+                        if (gs.IsBonusStage) gs.WaitRelease = true; // リング通過直後キー引き継ぎ防止
                         gs.State = GameStateEnum.StageClear;
-                        AudioSystem.PlayJingleClear();
+                        if (gs.IsBonusStage) AudioSystem.PlayJingleBonusClear();
+                        else                 AudioSystem.PlayJingleClear();
                     }
                     else
                     {

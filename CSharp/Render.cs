@@ -557,15 +557,37 @@ internal static class Renderer
         // ---- Stage clear ----
         if (gs.State == GameStateEnum.StageClear)
         {
-            Gl.Color4(0.0f, 0.05f, 0.0f, 0.75f);
+            // 失敗時は青紫、クリア時は緑のオーバーレイ
+            bool bonusFail = gs.IsBonusStage && gs.BonusFailed;
+            Gl.Color4(bonusFail ? 0.02f : 0.0f,
+                      bonusFail ? 0.0f  : 0.05f,
+                      bonusFail ? 0.08f : 0.0f,
+                      0.80f);
             Gl.Begin(PrimitiveType.Quads);
             Gl.Vertex2(0, 0); Gl.Vertex2(fw, 0); Gl.Vertex2(fw, fh); Gl.Vertex2(0, fh);
             Gl.End();
             float scw = 11.0f, sch = 17.0f, scw2 = 8.5f, sch2 = 13.0f;
             float cy2 = fh * 0.5f - 55.0f;
 
-            if (gs.IsBonusStage)
+            if (gs.IsBonusStage && gs.BonusFailed)
             {
+                // 失敗
+                ulong blink2 = GetTicks() / 600;
+                float nb = ((blink2 & 1) == 0) ? 1.0f : 0.55f;
+                string nob = "NO BONUS";
+                Gl.Color3(nb * 0.55f, nb * 0.55f, nb * 0.80f);
+                DrawString(fw * 0.5f - (float)nob.Length * (scw + 1) * 0.5f, cy2, scw, sch, nob);
+
+                string buf3 = $"TOTAL SCORE  {gs.Score}";
+                Gl.Color3(0.75f, 0.75f, 0.88f);
+                DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 40, scw2, sch2, buf3);
+
+                Gl.Color3(0.42f, 0.55f, 0.80f);
+                DrawString(fw * 0.5f - 85, cy2 + 72, scw2, sch2, "SPACE TO CONTINUE");
+            }
+            else if (gs.IsBonusStage)
+            {
+                // クリア
                 string buf = "BONUS STAGE CLEAR!";
                 Gl.Color3(1.0f, 0.85f, 0.0f);
                 DrawString(fw * 0.5f - (float)buf.Length * (scw + 1) * 0.5f, cy2, scw, sch, buf);

@@ -38,9 +38,12 @@ internal sealed class GameState
     public Vec3          ItemPos         = default;
     public bool          HasTimeItem     = false; // 時間切れ回避アイテム保持
     public bool          HasFuelItem     = false; // 燃料切れ回避アイテム保持
-    public bool          IsBonusStage  = false; // 現在ボーナスステージかどうか
-    public int           BonusStageNum = 0;    // 何回目のボーナスステージか (stage/5)
-    public int           SpeedBonusScore = 0;  // ボーナスステージの速度ボーナス点数 (表示用)
+    public bool          IsBonusStage    = false; // 現在ボーナスステージかどうか
+    public int           BonusStageNum   = 0;    // 何回目のボーナスステージか (stage/5)
+    public int           SpeedBonusScore = 0;    // ボーナスステージの速度ボーナス点数 (表示用)
+    public bool          BonusFailed     = false; // ボーナスステージ失敗フラグ
+    public bool          PendingBonus    = false; // 次ステージ開始前にボーナスを挿入する
+    public bool          WaitRelease     = false; // anyKey受付前にキー全解放を待つ
     public int           KonamiStep    = 0;   // コナミコマンド入力ステップ (0-9)
     public int           StageStart    = 1;   // 開始ステージ (チートで変更)
     public int           StageSel0     = 0;   // ステージセレクト 十の位
