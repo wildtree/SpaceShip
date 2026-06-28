@@ -490,7 +490,7 @@ internal static unsafe class Game
                 }
                 if (keyRight && gs.StageSelCur == 0) { gs.StageSelCur = 1; AudioSystem.PlayUiSelect(); }
                 if (keyLeft  && gs.StageSelCur == 1) { gs.StageSelCur = 0; AudioSystem.PlayUiSelect(); }
-                if (keyEnter)
+                if (keyEnter || keyKA)
                 {
                     int stageNum = gs.StageSel0 * 10 + gs.StageSel1;
                     gs.StageStart = Math.Max(1, Math.Min(99, stageNum));
@@ -616,9 +616,9 @@ internal static unsafe class Game
                     if (keyDown) idx = (idx + ENTRY_N - 1) % ENTRY_N;
                     gs.EntryCh[gs.EntryCur] = ENTRY_SET[idx];
                 }
-                if (keyRight && gs.EntryCur < 2) gs.EntryCur++;
-                if (keyLeft  && gs.EntryCur > 0) gs.EntryCur--;
-                if (keyEnter)
+                if ((keyRight || keyKA) && gs.EntryCur < 2) gs.EntryCur++;
+                if ((keyLeft || keyKB)  && gs.EntryCur > 0) gs.EntryCur--;
+                if (keyEnter || (keyKA && gs.EntryCur == 2))
                 {
                     string initials = new string(gs.EntryCh);
                     HiScoreManager.Add(initials, gs.Score, gs.Stage, (int)gs.Mode);
