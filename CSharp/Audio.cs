@@ -292,6 +292,19 @@ internal static class AudioSystem
         PushJingleNote(220.0f, 0.80f, 0.55f, 2f, harmRatio: 0.15f, gapSec: 0f);
     }
 
+    // ボーナスステージ開始: C5→E5→G5→C6→E6→G6 高速上昇ファンファーレ
+    public static void PlayJingleBonusStart()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(523.3f,  0.05f, 0.45f, 22f, 0.15f, 0.003f); // C5
+        PushJingleNote(659.3f,  0.05f, 0.50f, 22f, 0.15f, 0.003f); // E5
+        PushJingleNote(784.0f,  0.05f, 0.52f, 22f, 0.15f, 0.003f); // G5
+        PushJingleNote(1046.5f, 0.05f, 0.55f, 22f, 0.18f, 0.003f); // C6
+        PushJingleNote(1318.5f, 0.05f, 0.58f, 22f, 0.20f, 0.008f); // E6
+        PushJingleNote(1568.0f, 0.65f, 0.70f,  3f, 0.25f, 0.000f); // G6 (ビッグホールド)
+    }
+
     // ---- メニューUI操作音 ----
 
     // サイン波1音をUIストリームに追加する内部ヘルパー

@@ -358,8 +358,16 @@ internal static class Renderer
         Gl.Color3(0.5f, 0.7f, 1.0f);
         DrawString(mx, panelY + 4, cw, ch, $"ST{gs.Stage}");
 
-        Gl.Color3(0.7f, 1.0f, 0.5f);
-        DrawString(mx + 32, panelY + 4, cw, ch, $"{gs.RingsDone}/5");
+        if (gs.IsBonusStage)
+        {
+            Gl.Color3(1.0f, 0.85f, 0.0f);
+            DrawString(mx + 32, panelY + 4, cw, ch, "BONUS");
+        }
+        else
+        {
+            Gl.Color3(0.7f, 1.0f, 0.5f);
+            DrawString(mx + 32, panelY + 4, cw, ch, $"{gs.RingsDone}/5");
+        }
 
         Gl.Color3(0.45f, 0.45f, 0.65f);
         DrawString(mx + 70, panelY + 4, cw, ch, "SCORE");
@@ -555,17 +563,105 @@ internal static class Renderer
             Gl.End();
             float scw = 11.0f, sch = 17.0f, scw2 = 8.5f, sch2 = 13.0f;
             float cy2 = fh * 0.5f - 55.0f;
-            string buf = $"STAGE {gs.Stage - 1} CLEAR";
-            Gl.Color3(0.3f, 1.0f, 0.4f);
-            DrawString(fw * 0.5f - (float)buf.Length * (scw + 1) * 0.5f, cy2, scw, sch, buf);
-            string buf2 = $"FUEL BONUS  {gs.StageFuelBonus}";
-            Gl.Color3(0.5f, 1.0f, 0.6f);
-            DrawString(fw * 0.5f - (float)buf2.Length * (scw2 + 1) * 0.5f, cy2 + 34, scw2, sch2, buf2);
-            string buf3 = $"TOTAL SCORE {gs.Score}";
-            Gl.Color3(1.0f, 0.88f, 0.15f);
-            DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 54, scw2, sch2, buf3);
-            Gl.Color3(0.5f, 0.75f, 1.0f);
-            DrawString(fw * 0.5f - 85, cy2 + 85, scw2, sch2, "SPACE TO CONTINUE");
+
+            if (gs.IsBonusStage)
+            {
+                string buf = "BONUS STAGE CLEAR!";
+                Gl.Color3(1.0f, 0.85f, 0.0f);
+                DrawString(fw * 0.5f - (float)buf.Length * (scw + 1) * 0.5f, cy2, scw, sch, buf);
+
+                string spdb = $"SPEED BONUS  {gs.SpeedBonusScore}";
+                Gl.Color3(1.0f, 0.7f, 0.2f);
+                DrawString(fw * 0.5f - (float)spdb.Length * (scw2 + 1) * 0.5f, cy2 + 34, scw2, sch2, spdb);
+
+                string buf2 = $"FUEL BONUS   {gs.StageFuelBonus}";
+                Gl.Color3(0.5f, 1.0f, 0.6f);
+                DrawString(fw * 0.5f - (float)buf2.Length * (scw2 + 1) * 0.5f, cy2 + 54, scw2, sch2, buf2);
+
+                string buf3 = $"TOTAL SCORE  {gs.Score}";
+                Gl.Color3(1.0f, 0.88f, 0.15f);
+                DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 74, scw2, sch2, buf3);
+
+                Gl.Color3(0.5f, 0.75f, 1.0f);
+                DrawString(fw * 0.5f - 85, cy2 + 105, scw2, sch2, "SPACE TO CONTINUE");
+            }
+            else
+            {
+                string buf = $"STAGE {gs.Stage - 1} CLEAR";
+                Gl.Color3(0.3f, 1.0f, 0.4f);
+                DrawString(fw * 0.5f - (float)buf.Length * (scw + 1) * 0.5f, cy2, scw, sch, buf);
+
+                string buf2 = $"FUEL BONUS  {gs.StageFuelBonus}";
+                Gl.Color3(0.5f, 1.0f, 0.6f);
+                DrawString(fw * 0.5f - (float)buf2.Length * (scw2 + 1) * 0.5f, cy2 + 34, scw2, sch2, buf2);
+
+                string buf3 = $"TOTAL SCORE {gs.Score}";
+                Gl.Color3(1.0f, 0.88f, 0.15f);
+                DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 54, scw2, sch2, buf3);
+
+                Gl.Color3(0.5f, 0.75f, 1.0f);
+                DrawString(fw * 0.5f - 85, cy2 + 85, scw2, sch2, "SPACE TO CONTINUE");
+            }
+        }
+
+        // ---- Bonus stage intro ----
+        if (gs.State == GameStateEnum.BonusIntro)
+        {
+            Gl.Color4(0.0f, 0.02f, 0.06f, 0.84f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(0, 0); Gl.Vertex2(fw, 0); Gl.Vertex2(fw, fh); Gl.Vertex2(0, fh);
+            Gl.End();
+
+            float bcw = 13.0f, bch = 20.0f;
+            float mcw = 8.5f,  mch = 13.0f;
+            float scw3 = 7.0f, sch3 = 11.0f;
+            float bcy = fh * 0.5f - 100.0f;
+
+            // ヘッダー
+            string hdr = "** BONUS STAGE **";
+            Gl.Color3(1.0f, 0.85f, 0.0f);
+            DrawString(fw * 0.5f - (float)hdr.Length * (bcw + 1) * 0.5f, bcy, bcw, bch, hdr);
+
+            // リング種別
+            string ringDesc = gs.BonusStageNum >= 3 ? "MOVING RING"
+                            : gs.BonusStageNum == 2  ? "ROTATING RING"
+                            : "STATIONARY RING";
+            Gl.Color3(0.6f, 0.88f, 1.0f);
+            DrawString(fw * 0.5f - (float)ringDesc.Length * (mcw + 1) * 0.5f, bcy + 30, mcw, mch, ringDesc);
+
+            // 速度ボーナス表
+            string th = "SPEED BONUS TABLE";
+            Gl.Color3(0.75f, 0.78f, 0.88f);
+            DrawString(fw * 0.5f - (float)th.Length * (scw3 + 1) * 0.5f, bcy + 56, scw3, sch3, th);
+
+            float tx  = fw * 0.5f - 90.0f;
+            float ty2 = bcy + 72.0f;
+            float tdy = 17.0f;
+            (string spd, string pts, float r, float g, float b)[] rows =
+            {
+                ("400+ px/s", "1000 pts", 1.0f, 0.50f, 0.0f),
+                ("300+ px/s",  "700 pts", 1.0f, 0.68f, 0.0f),
+                ("200+ px/s",  "500 pts", 1.0f, 0.88f, 0.1f),
+                ("150+ px/s",  "200 pts", 0.9f, 1.0f,  0.3f),
+                ("100+ px/s",  "100 pts", 0.7f, 1.0f,  0.5f),
+                (" <100 px/s",   "0 pts", 0.45f, 0.45f, 0.5f),
+            };
+            for (int i = 0; i < rows.Length; i++)
+            {
+                var row = rows[i];
+                Gl.Color3(row.r, row.g, row.b);
+                DrawString(tx,      ty2 + i * tdy, scw3, sch3, row.spd);
+                DrawString(tx + 96, ty2 + i * tdy, scw3, sch3, row.pts);
+            }
+
+            // PRESS ANY KEY (点滅)
+            ulong blink = GetTicks() / 500;
+            if ((blink & 1) == 0)
+            {
+                Gl.Color3(0.5f, 0.88f, 1.0f);
+                DrawString(fw * 0.5f - (float)"PRESS ANY KEY".Length * (mcw + 1) * 0.5f,
+                           bcy + 200, mcw, mch, "PRESS ANY KEY");
+            }
         }
 
         // ---- Explosion flash ----
@@ -870,6 +966,20 @@ internal static class Renderer
             }
             Gl.Color3(0.5f, 0.65f, 0.85f);
             DrawString(fw * 0.5f - 55, ry + 150, rscw, rsch, "HIT ANY KEY");
+        }
+
+        // ---- 合成速度 大きめ表示 (ゲームビュー内 右上) ----
+        if (gs.State == GameStateEnum.Playing   ||
+            gs.State == GameStateEnum.BonusIntro ||
+            gs.State == GameStateEnum.Countdown)
+        {
+            float bigCw = cw * 2.2f, bigCh = ch * 2.2f;  // ~15×24
+            float sx = fw - 150.0f, sy = 44.0f;
+            Gl.Color3(0.28f, 0.35f, 0.52f);
+            DrawString(sx, sy + 5, cw, ch, "SPD");
+            if (gs.IsBonusStage) Gl.Color3(1.0f, 0.85f, 0.0f);
+            else                 Gl.Color3(0.95f, 0.88f, 0.12f);
+            DrawFloatInt(sx + 28, sy, bigCw, bigCh, speed, 4);
         }
 
         // ---- Playing warnings ----

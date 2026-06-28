@@ -113,6 +113,7 @@ internal static unsafe class Game
             if (Vec3.Len(Vec3.TorusDelta(pos, gs.Ring.Pos)) < MIN_DIST) continue;
             if (gs.HasNeutronStar && Vec3.Len(Vec3.TorusDelta(pos, gs.NeutronStarPos)) < MIN_DIST) continue;
             gs.ItemPos = pos;
+            AudioSystem.PlayItemSpawn(gs.ItemType);
             return;
         }
         // 200回試行で見つからなければ制約を無視して配置
@@ -121,6 +122,67 @@ internal static unsafe class Game
             (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
             (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
         AudioSystem.PlayItemSpawn(gs.ItemType);
+    }
+
+    // ボーナスステージ用リング: bonusNum 1=固定, 2=回転, 3+=回転+移動
+    private static void SpawnBonusRing(ref Ring ring, int bonusNum, bool hasNS, Vec3 nsPos)
+    {
+        const float NS_MIN_DIST = 200.0f;
+        do
+        {
+            ring.Pos = new Vec3(
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+        }
+        while (hasNS && Vec3.Len(Vec3.TorusDelta(ring.Pos, nsPos)) < NS_MIN_DIST);
+
+        float theta = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
+        float phi   = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
+        ring.Normal = Vec3.Norm(new Vec3(
+            MathF.Sin(phi) * MathF.Cos(theta),
+            MathF.Sin(phi) * MathF.Sin(theta),
+            MathF.Cos(phi)));
+        Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+        ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
+
+        bool rot  = bonusNum >= 2;
+        bool move = bonusNum >= 3;
+        ring.RotSpeed = rot ? (MathF.PI / 30.0f) : 0.0f;
+        ring.RotAxis  = rot ? Vec3.Norm(Vec3.Cross(ring.Normal, ring.Up)) : new Vec3(0, 1, 0);
+        ring.MoveSpeed = move ? 50.0f : 0.0f;
+        if (move)
+        {
+            float mt = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
+            float mp = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
+            ring.MoveDir = Vec3.Norm(new Vec3(
+                MathF.Sin(mp) * MathF.Cos(mt),
+                MathF.Sin(mp) * MathF.Sin(mt),
+                MathF.Cos(mp)));
+        }
+        else { ring.MoveDir = new Vec3(0, 0, 0); }
+        ring.ColorType = move ? 2 : (rot ? 1 : 0);
+    }
+
+    // 次ステージを開始: ボーナスステージ判定 → BonusIntro or Countdown
+    private static void StartNextStage(GameState gs)
+    {
+        SpawnNeutronStar(gs);
+        if (gs.Stage % 5 == 0)
+        {
+            gs.IsBonusStage  = true;
+            gs.BonusStageNum = gs.Stage / 5;
+            SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.HasNeutronStar, gs.NeutronStarPos);
+            gs.State = GameStateEnum.BonusIntro;
+            AudioSystem.PlayJingleBonusStart();
+        }
+        else
+        {
+            gs.IsBonusStage = false;
+            SpawnRing(ref gs.Ring, 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
+            gs.State = GameStateEnum.Countdown;
+            AudioSystem.PlayJingleStart();
+        }
     }
 
     private static int CheckRingPass(GameState gs)
@@ -439,10 +501,18 @@ internal static unsafe class Game
                     gs.Mode             = chosenMode;
                     gs.Ship             = chosenShip;
                     gs.RankingModeIdx   = rmi;
-                    gs.State            = GameStateEnum.Countdown;
-                    AudioSystem.PlayJingleStart();
-                    SpawnNeutronStar(gs);
-                    SpawnRing(ref gs.Ring, 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
+                    StartNextStage(gs);
+                }
+                goto doRender;
+            }
+
+            // ---- Bonus stage intro ----
+            if (gs.State == GameStateEnum.BonusIntro)
+            {
+                if (anyKey)
+                {
+                    gs.State = GameStateEnum.Countdown;
+                    AudioSystem.PlayUiConfirm();
                 }
                 goto doRender;
             }
@@ -540,10 +610,7 @@ internal static unsafe class Game
                     gs.Fuel           = gs.InitialFuel;
                     gs.CountdownVal   = C.COUNTDOWN_START;
                     gs.CountdownLastN = (int)C.COUNTDOWN_START + 1;
-                    gs.State          = GameStateEnum.Countdown;
-                    AudioSystem.PlayJingleStart();
-                    SpawnNeutronStar(gs);
-                    SpawnRing(ref gs.Ring, 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
+                    StartNextStage(gs);
                 }
                 goto doRender;
             }
@@ -750,8 +817,20 @@ internal static unsafe class Game
                     gs.RingsDone++;
                     gs.RingTimer = gs.TimeLimit;
 
-                    if (gs.RingsDone >= C.RINGS_PER_STAGE)
+                    int ringsNeeded = gs.IsBonusStage ? 1 : C.RINGS_PER_STAGE;
+                    if (gs.RingsDone >= ringsNeeded)
                     {
+                        if (gs.IsBonusStage)
+                        {
+                            float spd = Vec3.Len(gs.Vel);
+                            gs.SpeedBonusScore = spd >= 400 ? 1000
+                                               : spd >= 300 ? 700
+                                               : spd >= 200 ? 500
+                                               : spd >= 150 ? 200
+                                               : spd >= 100 ? 100
+                                               : 0;
+                            gs.Score += gs.SpeedBonusScore;
+                        }
                         int fuelBonus     = (int)gs.Fuel;
                         gs.Score         += fuelBonus;
                         gs.StageFuelBonus = fuelBonus;
@@ -762,8 +841,11 @@ internal static unsafe class Game
                     else
                     {
                         SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
-                        if (gs.RingsDone == 2) SpawnBonusItem(gs);   // 3枠目出現と同時にアイテム出現
-                        if (gs.RingsDone == 3) gs.ItemType = 0;       // 3枠目クリアでアイテム消滅
+                        if (!gs.IsBonusStage)
+                        {
+                            if (gs.RingsDone == 2) SpawnBonusItem(gs);
+                            if (gs.RingsDone == 3) gs.ItemType = 0;
+                        }
                     }
                 }
             }

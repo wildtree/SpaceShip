@@ -133,6 +133,7 @@ internal enum GameStateEnum
     StageSelect,  // コナミコマンド後のステージ選択
     ModeSelect,
     ShipSelect,
+    BonusIntro,   // ボーナスステージ開始前の説明画面
     Countdown,
     Playing,
     Exploding,
