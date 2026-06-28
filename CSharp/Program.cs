@@ -826,6 +826,7 @@ internal static unsafe class Game
                     float nsDist2 = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.NeutronStarPos));
                     if (nsDist2 < 4.0f + C.SHIP_RADIUS)
                     {
+                        if (gs.IsBonusStage) { FailBonusStage(gs); goto doRender; }
                         gs.State        = GameStateEnum.Exploding;
                         gs.ExplodeTimer = C.EXPLODE_DURATION;
                         AudioSystem.PlayExplosion();
@@ -849,6 +850,7 @@ internal static unsafe class Game
 
                 if (CheckRingHit(gs))
                 {
+                    if (gs.IsBonusStage) { FailBonusStage(gs); goto doRender; }
                     gs.State        = GameStateEnum.Exploding;
                     gs.ExplodeTimer = C.EXPLODE_DURATION;
                     AudioSystem.PlayExplosion();

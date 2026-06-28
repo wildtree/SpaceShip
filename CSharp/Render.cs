@@ -582,8 +582,10 @@ internal static class Renderer
                 Gl.Color3(0.75f, 0.75f, 0.88f);
                 DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 40, scw2, sch2, buf3);
 
+                int secLeft = (int)MathF.Ceiling(gs.StageClearTimer);
+                string cntd = $"NEXT STAGE IN  {secLeft}";
                 Gl.Color3(0.42f, 0.55f, 0.80f);
-                DrawString(fw * 0.5f - 85, cy2 + 72, scw2, sch2, "SPACE TO CONTINUE");
+                DrawString(fw * 0.5f - (float)cntd.Length * (scw2 + 1) * 0.5f, cy2 + 72, scw2, sch2, cntd);
             }
             else if (gs.IsBonusStage)
             {
@@ -604,8 +606,10 @@ internal static class Renderer
                 Gl.Color3(1.0f, 0.88f, 0.15f);
                 DrawString(fw * 0.5f - (float)buf3.Length * (scw2 + 1) * 0.5f, cy2 + 74, scw2, sch2, buf3);
 
+                int secLeft = (int)MathF.Ceiling(gs.StageClearTimer);
+                string cntd = $"NEXT STAGE IN  {secLeft}";
                 Gl.Color3(0.5f, 0.75f, 1.0f);
-                DrawString(fw * 0.5f - 85, cy2 + 105, scw2, sch2, "SPACE TO CONTINUE");
+                DrawString(fw * 0.5f - (float)cntd.Length * (scw2 + 1) * 0.5f, cy2 + 105, scw2, sch2, cntd);
             }
             else
             {
