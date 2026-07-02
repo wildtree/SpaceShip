@@ -833,6 +833,12 @@ internal static unsafe class Game
                 gs.Pos     = Vec3.Wrap(Vec3.Add(gs.Pos, Vec3.Scale(gs.Vel, dt)));
 
                 if (gs.ExcellentTimer > 0.0f) gs.ExcellentTimer -= dt;
+                if (gs.StageClearPending && gs.ExcellentTimer <= 0f)
+                {
+                    gs.StageClearPending = false;
+                    if (gs.IsBonusStage) gs.StageClearTimer = 30f;
+                    gs.State = GameStateEnum.StageClear;
+                }
 
                 // ボーナスアイテム接触 (アイテム半径8 + 船体半径8 = 16px)
                 if (gs.ItemType != 0)
@@ -933,10 +939,17 @@ internal static unsafe class Game
                         int fuelBonus     = (int)gs.Fuel;
                         gs.Score         += fuelBonus;
                         gs.StageFuelBonus = fuelBonus;
-                        if (gs.IsBonusStage) gs.StageClearTimer = 30f; // キー待ちなし: 30秒表示後に自動進行
-                        gs.State = GameStateEnum.StageClear;
                         if (gs.IsBonusStage) AudioSystem.PlayJingleBonusClear();
                         else                 AudioSystem.PlayJingleClear();
+                        if (gs.ExcellentTimer > 0f)
+                        {
+                            gs.StageClearPending = true; // Excellent表示後にStageClearへ
+                        }
+                        else
+                        {
+                            if (gs.IsBonusStage) gs.StageClearTimer = 30f;
+                            gs.State = GameStateEnum.StageClear;
+                        }
                     }
                     else
                     {

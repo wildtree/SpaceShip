@@ -54,6 +54,7 @@ internal sealed class GameState
     public int           TimeWarning     = 0;
     public int           CountdownLastN  = (int)C.COUNTDOWN_START + 1;
     public float         ExcellentTimer  = 0f;
+    public bool          StageClearPending = false; // Excellent表示中にStageClear遷移を保留
 
     public void ReOrthogonalize()
     {
