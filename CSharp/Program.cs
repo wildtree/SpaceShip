@@ -44,14 +44,14 @@ internal static unsafe class Game
             string guidStr = System.Text.Encoding.ASCII.GetString(guidBuf, 0, 32);
             string jname   = GetJoystickNameForID(jid) ?? "Joystick";
 
-            // 汎用マッピング: 一般的なUSBゲームパッドクローン向け
-            // b0=Y b1=B b2=A b3=X  h0=Dpad  a0/a1=LeftStick  a2/a3=RightStick
+            // 汎用マッピング: USB gamepad (081F:E401) クローン向け
+            // b0=X b1=A b2=B b3=Y  十字キー=a0(横)/a1(縦) アナログスティックなし
             string mapping = $"{guidStr},{jname},platform:Linux," +
-                             "a:b2,b:b1,x:b3,y:b0,back:b8,start:b9," +
+                             "a:b1,b:b2,x:b0,y:b3,back:b8,start:b9," +
                              "leftshoulder:b4,rightshoulder:b5," +
                              "lefttrigger:b6,righttrigger:b7," +
-                             "dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2," +
-                             "leftx:a0,lefty:a1,rightx:a2,righty:a3," +
+                             "dpup:-a1,dpdown:+a1,dpleft:-a0,dpright:+a0," +
+                             "leftx:a0,lefty:a1," +
                              "leftstick:b10,rightstick:b11";
             AddGamepadMapping(mapping);
 
@@ -419,6 +419,20 @@ internal static unsafe class Game
                         s_gamepad = IntPtr.Zero;
                         OpenFirstGamepad(); // 他に繋がっているものを試みる
                     }
+                }
+
+                // ゲームパッドの生ボタン番号を stderr に出力 (マッピング確認用)
+                if (ev.Type == (uint)EventType.JoystickButtonDown && s_gamepad != IntPtr.Zero)
+                {
+                    var gj = GetGamepadJoystick(s_gamepad);
+                    if (gj != IntPtr.Zero && GetJoystickFromID(ev.JButton.Which) == gj)
+                        Console.Error.WriteLine($"[Gamepad] raw button {ev.JButton.Button} pressed");
+                }
+                if (ev.Type == (uint)EventType.JoystickAxisMotion && s_gamepad != IntPtr.Zero)
+                {
+                    var gj = GetGamepadJoystick(s_gamepad);
+                    if (gj != IntPtr.Zero && GetJoystickFromID(ev.JAxis.Which) == gj && Math.Abs(ev.JAxis.Value) > 10)
+                        Console.Error.WriteLine($"[Gamepad] raw axis {ev.JAxis.Axis} = {ev.JAxis.Value}");
                 }
 
                 // ゲームパッドボタン → メニュー操作
