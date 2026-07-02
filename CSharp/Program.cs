@@ -24,9 +24,39 @@ internal static unsafe class Game
     private static void OpenFirstGamepad()
     {
         if (s_gamepad != IntPtr.Zero) return;
+
+        // SDL のゲームパッドデータベースに登録済みのデバイスを優先
         var ids = GetGamepads(out int count);
-        if (ids != null && count > 0)
-            s_gamepad = OpenGamepad(ids[0]);
+        if (ids != null && count > 0) { s_gamepad = OpenGamepad(ids[0]); return; }
+
+        // 未登録ジョイスティックに汎用マッピングを追加してゲームパッドとして使う
+        var jids = GetJoysticks(out int jcount);
+        if (jids == null || jcount == 0) return;
+        for (int i = 0; i < jcount; i++)
+        {
+            uint jid = jids[i];
+            if (IsGamepad(jid)) continue; // 既に登録済み
+
+            // GUIDを文字列化してマッピング文字列を構築
+            var guid = GetJoystickGUIDForID(jid);
+            byte[] guidBuf = new byte[33];
+            GUIDToString(guid, guidBuf, guidBuf.Length);
+            string guidStr = System.Text.Encoding.ASCII.GetString(guidBuf, 0, 32);
+            string jname   = GetJoystickNameForID(jid) ?? "Joystick";
+
+            // 汎用マッピング: 一般的なUSBゲームパッドクローン向け
+            // b0=Y b1=B b2=A b3=X  h0=Dpad  a0/a1=LeftStick  a2/a3=RightStick
+            string mapping = $"{guidStr},{jname},platform:Linux," +
+                             "a:b2,b:b1,x:b3,y:b0,back:b8,start:b9," +
+                             "leftshoulder:b4,rightshoulder:b5," +
+                             "lefttrigger:b6,righttrigger:b7," +
+                             "dpup:h0.1,dpdown:h0.4,dpleft:h0.8,dpright:h0.2," +
+                             "leftx:a0,lefty:a1,rightx:a2,righty:a3," +
+                             "leftstick:b10,rightstick:b11";
+            AddGamepadMapping(mapping);
+
+            if (IsGamepad(jid)) { s_gamepad = OpenGamepad(jid); return; }
+        }
     }
 
     private static void InitStars()
@@ -371,6 +401,11 @@ internal static unsafe class Game
                 }
 
                 // ゲームパッド接続/切断
+                if (ev.Type == (uint)EventType.JoystickAdded)
+                {
+                    // 未登録デバイスの場合も OpenFirstGamepad 内でマッピングを追加して開く
+                    if (s_gamepad == IntPtr.Zero) OpenFirstGamepad();
+                }
                 if (ev.Type == (uint)EventType.GamepadAdded)
                 {
                     if (s_gamepad == IntPtr.Zero)
