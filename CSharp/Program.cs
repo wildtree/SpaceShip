@@ -421,20 +421,6 @@ internal static unsafe class Game
                     }
                 }
 
-                // ゲームパッドの生ボタン番号を stderr に出力 (マッピング確認用)
-                if (ev.Type == (uint)EventType.JoystickButtonDown && s_gamepad != IntPtr.Zero)
-                {
-                    var gj = GetGamepadJoystick(s_gamepad);
-                    if (gj != IntPtr.Zero && GetJoystickFromID(ev.JButton.Which) == gj)
-                        Console.Error.WriteLine($"[Gamepad] raw button {ev.JButton.Button} pressed");
-                }
-                if (ev.Type == (uint)EventType.JoystickAxisMotion && s_gamepad != IntPtr.Zero)
-                {
-                    var gj = GetGamepadJoystick(s_gamepad);
-                    if (gj != IntPtr.Zero && GetJoystickFromID(ev.JAxis.Which) == gj && Math.Abs(ev.JAxis.Value) > 10)
-                        Console.Error.WriteLine($"[Gamepad] raw axis {ev.JAxis.Axis} = {ev.JAxis.Value}");
-                }
-
                 // ゲームパッドボタン → メニュー操作
                 if (ev.Type == (uint)EventType.GamepadButtonDown)
                 {
