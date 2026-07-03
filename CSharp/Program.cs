@@ -115,6 +115,8 @@ internal static unsafe class Game
             ring.MoveDir = new Vec3(0, 0, 0);
         }
         ring.ColorType = shouldMove ? 2 : (shouldRotate ? 1 : 0);
+        ring.Radius    = C.RING_RADIUS;
+        ring.PrevPos   = ring.Pos;
     }
 
     private static void SpawnNeutronStar(GameState gs)
@@ -158,9 +160,9 @@ internal static unsafe class Game
     // bonusNum が増えるほど速くなる
     private static void SpawnBonusRing(ref Ring ring, int bonusNum, Vec3 playerPos)
     {
-        const float SPAWN_DIST = 550.0f;
+        // 母艦ドッキングポート: プレイヤーから 600-750 ユニット離れた位置に静止
+        float spawnDist = 600.0f + (float)Random.Shared.NextDouble() * 150.0f;
 
-        // プレイヤーからランダム方向 SPAWN_DIST 離れた位置にリングを生成
         float theta  = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
         float phi    = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
         Vec3 awayDir = Vec3.Norm(new Vec3(
@@ -168,19 +170,20 @@ internal static unsafe class Game
             MathF.Sin(phi) * MathF.Sin(theta),
             MathF.Cos(phi)));
 
-        ring.Pos     = Vec3.Wrap(Vec3.Add(playerPos, Vec3.Scale(awayDir, SPAWN_DIST)));
+        ring.Pos     = Vec3.Wrap(Vec3.Add(playerPos, Vec3.Scale(awayDir, spawnDist)));
         ring.PrevPos = ring.Pos;
 
-        // ラップ後の実際の位置から ring→player 方向を再計算
+        // ドッキングポートはプレイヤーの方を向く
         ring.Normal = Vec3.Norm(Vec3.TorusDelta(ring.Pos, playerPos));
         Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
 
-        ring.MoveDir   = ring.Normal;
-        ring.MoveSpeed = 180.0f + bonusNum * 20.0f; // bonusNum=1: 200, =2: 220, =3: 240...
-        ring.RotSpeed  = 0.0f;
-        ring.RotAxis   = new Vec3(0, 1, 0);
-        ring.ColorType = 2; // magenta: 接近ボーナスリング
+        ring.MoveDir   = new Vec3(0, 0, 0);
+        ring.MoveSpeed = 0.0f;                       // 母艦は静止
+        ring.RotSpeed  = 0.4f;                       // ドッキングポートが自転
+        ring.RotAxis   = ring.Normal;                // 面法線回りに回転 (向きは変わらない)
+        ring.ColorType = 3;                          // white: ドッキングポート
+        ring.Radius    = C.DOCK_RING_RADIUS;
     }
 
     // ボーナスステージ失敗: 得点なしでステージ終了
@@ -211,7 +214,6 @@ internal static unsafe class Game
             gs.BonusStageNum++;
             gs.WaitRelease   = true; // 直前のキー入力を引き継がないよう解放待ち
             SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.Pos);
-            gs.RingTimer = 550.0f / gs.Ring.MoveSpeed + 2.5f; // 到達時間 + 余裕
             gs.State = GameStateEnum.BonusIntro;
             AudioSystem.PlayJingleBonusStart();
         }
@@ -240,7 +242,8 @@ internal static unsafe class Game
             float along  = Vec3.Dot(toRing, gs.Ring.Normal);
             Vec3 inPlane = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
             float d      = Vec3.Len(inPlane);
-            if (d <= C.RING_RADIUS) return (d <= 8.0f) ? 2 : 1;
+            float rr = gs.Ring.Radius;
+            if (d <= rr) return (d <= rr * 0.083f) ? 2 : 1; // 中心8%以内でExcellent
         }
 
         // 高速リングチェック: リング面がプレイヤーを横断 (ring-comes-to-you 用)
@@ -254,7 +257,8 @@ internal static unsafe class Game
             float along   = Vec3.Dot(toRing, gs.Ring.Normal);
             Vec3 inPlane  = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
             float d       = Vec3.Len(inPlane);
-            if (d <= C.RING_RADIUS) return (d <= 8.0f) ? 2 : 1;
+            float rr2 = gs.Ring.Radius;
+            if (d <= rr2) return (d <= rr2 * 0.083f) ? 2 : 1;
         }
 
         return 0;
@@ -277,7 +281,7 @@ internal static unsafe class Game
             float alongN = Vec3.Dot(s, gs.Ring.Normal);
             Vec3  ip     = Vec3.Sub(s, Vec3.Scale(gs.Ring.Normal, alongN));
             float r      = Vec3.Len(ip);
-            float dist   = MathF.Sqrt((r - C.RING_RADIUS) * (r - C.RING_RADIUS) + alongN * alongN);
+            float dist   = MathF.Sqrt((r - gs.Ring.Radius) * (r - gs.Ring.Radius) + alongN * alongN);
             if (dist < hitR) return true;
         }
         return false;
@@ -306,7 +310,7 @@ internal static unsafe class Game
                 Vec3  s    = Vec3.Scale(d, -1.0f);
                 float an   = Vec3.Dot(s, rnorm);
                 float r    = Vec3.Len(Vec3.Sub(s, Vec3.Scale(rnorm, an)));
-                float dist = MathF.Sqrt((r - C.RING_RADIUS) * (r - C.RING_RADIUS) + an * an);
+                float dist = MathF.Sqrt((r - gs.Ring.Radius) * (r - gs.Ring.Radius) + an * an);
                 if (dist < hitR) return true;
             }
         }
@@ -942,11 +946,27 @@ internal static unsafe class Game
                 int passResult = CheckRingPass(gs);
                 if (passResult != 0)
                 {
+                    // ドッキング速度チェック (ボーナスステージ)
+                    if (gs.IsBonusStage)
+                    {
+                        float dockSpd = Vec3.Len(gs.Vel);
+                        if (dockSpd > C.DOCK_MAX_SPEED)
+                        {
+                            FailBonusStage(gs); goto doRender; // 速度超過 → 衝突
+                        }
+                        gs.SpeedBonusScore = dockSpd < 10f ? 1000
+                                           : dockSpd < 25f ? 800
+                                           : dockSpd < 40f ? 600
+                                           : 400;
+                        gs.Score += gs.SpeedBonusScore;
+                    }
+
                     int baseScore = (gs.Ring.ColorType == 2) ? 400
                                   : (gs.Ring.ColorType == 1) ? 200
                                   : C.RING_BASE_SCORE;
-                    int ringScore = baseScore + (int)gs.RingTimer * C.RING_TIME_BONUS;
-                    if (passResult == 2)
+                    int ringScore = gs.IsBonusStage ? 0
+                                  : baseScore + (int)gs.RingTimer * C.RING_TIME_BONUS;
+                    if (passResult == 2 && !gs.IsBonusStage)
                     {
                         ringScore         += 50;
                         gs.ExcellentTimer  = 2.0f;
@@ -961,20 +981,7 @@ internal static unsafe class Game
                     {
                         if (gs.IsBonusStage)
                         {
-                            // ボーナスはステージ番号を消費しない
-                            // 接近速度 = リング速度 + プレイヤーのリング方向成分
-                            float ringSpd = gs.Ring.MoveSpeed;
-                            Vec3 toRingDir = Vec3.Scale(gs.Ring.MoveDir, -1.0f);
-                            float playerContrib = MathF.Max(0f, Vec3.Dot(gs.Vel, toRingDir));
-                            float spd = ringSpd + playerContrib;
-                            gs.SpeedBonusScore = spd >= 400 ? 1000
-                                               : spd >= 300 ? 700
-                                               : spd >= 200 ? 500
-                                               : spd >= 150 ? 200
-                                               : spd >= 100 ? 100
-                                               : 0;
-                            gs.Score += gs.SpeedBonusScore;
-                            gs.Ring.MoveSpeed = 0f; // リングを停止してミス検出の誤作動を防ぐ
+                            // ボーナスはステージ番号を消費しない (SpeedBonusScore は上で設定済み)
                         }
                         else
                         {
@@ -1057,6 +1064,7 @@ internal static unsafe class Game
 
             Renderer.RenderStars(gs.Pos, Stars);
             Renderer.RenderRing(ref gs.Ring, gs.Pos);
+            if (gs.IsBonusStage) Renderer.RenderMothership(ref gs.Ring, gs.Pos);
             Renderer.RenderBonusItem(gs, gs.Pos, wh);
             Renderer.RenderNeutronStar(gs, gs.Pos);
             Renderer.RenderHud(gs, ww, wh);

@@ -114,14 +114,17 @@ internal static class Renderer
 
     public static void RenderRingAt(ref Ring ring, Vec3 rel)
     {
-        Vec3 norm = ring.Normal;
-        Vec3 rr   = Vec3.Norm(Vec3.Cross(norm, ring.Up));
-        Vec3 up   = ring.Up;
+        Vec3  norm   = ring.Normal;
+        Vec3  rr     = Vec3.Norm(Vec3.Cross(norm, ring.Up));
+        Vec3  up     = ring.Up;
+        float radius = ring.Radius > 0f ? ring.Radius : C.RING_RADIUS;
+        float tubeR  = radius > C.RING_RADIUS ? C.RING_TUBE_RADIUS * 2.5f : C.RING_TUBE_RADIUS;
 
         switch (ring.ColorType)
         {
             case 1:  Gl.Color3(0.0f, 1.0f, 1.0f); break;  // cyan
             case 2:  Gl.Color3(1.0f, 0.0f, 1.0f); break;  // magenta
+            case 3:  Gl.Color3(0.8f, 0.9f, 1.0f); break;  // white-blue: ドッキングポート
             default: Gl.Color3(1.0f, 0.55f, 0.0f); break; // gold
         }
 
@@ -130,8 +133,8 @@ internal static class Renderer
             float a0 = (float)i       / C.RING_SEGMENTS * 2.0f * MathF.PI;
             float a1 = (float)(i + 1) / C.RING_SEGMENTS * 2.0f * MathF.PI;
 
-            Vec3 c0 = Vec3.Add(rel, Vec3.Add(Vec3.Scale(rr, MathF.Cos(a0) * C.RING_RADIUS), Vec3.Scale(up, MathF.Sin(a0) * C.RING_RADIUS)));
-            Vec3 c1 = Vec3.Add(rel, Vec3.Add(Vec3.Scale(rr, MathF.Cos(a1) * C.RING_RADIUS), Vec3.Scale(up, MathF.Sin(a1) * C.RING_RADIUS)));
+            Vec3 c0 = Vec3.Add(rel, Vec3.Add(Vec3.Scale(rr, MathF.Cos(a0) * radius), Vec3.Scale(up, MathF.Sin(a0) * radius)));
+            Vec3 c1 = Vec3.Add(rel, Vec3.Add(Vec3.Scale(rr, MathF.Cos(a1) * radius), Vec3.Scale(up, MathF.Sin(a1) * radius)));
 
             Gl.Begin(PrimitiveType.TriangleStrip);
             for (int j = 0; j <= C.TUBE_SEGMENTS; j++)
@@ -139,8 +142,8 @@ internal static class Renderer
                 float b    = (float)j / C.TUBE_SEGMENTS * 2.0f * MathF.PI;
                 Vec3 tn0   = Vec3.Norm(Vec3.Add(Vec3.Scale(Vec3.Norm(Vec3.Sub(c0, rel)), MathF.Cos(b)), Vec3.Scale(norm, MathF.Sin(b))));
                 Vec3 tn1   = Vec3.Norm(Vec3.Add(Vec3.Scale(Vec3.Norm(Vec3.Sub(c1, rel)), MathF.Cos(b)), Vec3.Scale(norm, MathF.Sin(b))));
-                Vec3 v0    = Vec3.Add(c0, Vec3.Scale(tn0, C.RING_TUBE_RADIUS));
-                Vec3 v1    = Vec3.Add(c1, Vec3.Scale(tn1, C.RING_TUBE_RADIUS));
+                Vec3 v0    = Vec3.Add(c0, Vec3.Scale(tn0, tubeR));
+                Vec3 v1    = Vec3.Add(c1, Vec3.Scale(tn1, tubeR));
                 Gl.Normal3(tn0.X, tn0.Y, tn0.Z); Gl.Vertex3(v0.X, v0.Y, v0.Z);
                 Gl.Normal3(tn1.X, tn1.Y, tn1.Z); Gl.Vertex3(v1.X, v1.Y, v1.Z);
             }
@@ -163,6 +166,96 @@ internal static class Renderer
             if (Vec3.Len(rel) > drawDist) continue;
             RenderRingAt(ref ring, rel);
         }
+    }
+
+    // 母艦ボディ: ドッキングポートリングの背後に描画
+    public static void RenderMothership(ref Ring ring, Vec3 shipPos)
+    {
+        Vec3  raw      = Vec3.Sub(ring.Pos, shipPos);
+        float drawDist = C.SPACE_SIZE * 0.6f;
+
+        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dz = -1; dz <= 1; dz++)
+        {
+            Vec3 rel = new(raw.X + dx * C.SPACE_SIZE,
+                           raw.Y + dy * C.SPACE_SIZE,
+                           raw.Z + dz * C.SPACE_SIZE);
+            if (Vec3.Len(rel) > drawDist) continue;
+            RenderMothershipAt(rel, ring.Normal, ring.Up);
+        }
+    }
+
+    private static void RenderMothershipAt(Vec3 rel, Vec3 norm, Vec3 up)
+    {
+        Vec3 right = Vec3.Norm(Vec3.Cross(norm, up));
+
+        // ローカル座標 (right, up, -norm) で頂点を生成するヘルパー
+        // norm 軸の正方向はプレイヤー側 → 負方向が船体側
+        Vec3 L(float r, float u, float n) => new Vec3(
+            rel.X + right.X * r + up.X * u + norm.X * n,
+            rel.Y + right.Y * r + up.Y * u + norm.Y * n,
+            rel.Z + right.Z * r + up.Z * u + norm.Z * n);
+
+        // ---- メインハル (box): 幅120 × 高60 × 奥行130 ----
+        Gl.LineWidth(1.5f);
+        Gl.Color3(0.45f, 0.72f, 1.0f);
+        Gl.Begin(PrimitiveType.Lines);
+        float[] xs = { -60f,  60f };
+        float[] ys = { -30f,  30f };
+        float[] zs = { -10f, -140f }; // -norm 方向が船体奥
+        for (int i = 0; i < 2; i++) for (int j = 0; j < 2; j++)
+        { var a = L(xs[i], ys[j], zs[0]); var b = L(xs[i], ys[j], zs[1]);
+          Gl.Vertex3(a.X, a.Y, a.Z); Gl.Vertex3(b.X, b.Y, b.Z); }
+        for (int i = 0; i < 2; i++) for (int k = 0; k < 2; k++)
+        { var a = L(xs[i], ys[0], zs[k]); var b = L(xs[i], ys[1], zs[k]);
+          Gl.Vertex3(a.X, a.Y, a.Z); Gl.Vertex3(b.X, b.Y, b.Z); }
+        for (int j = 0; j < 2; j++) for (int k = 0; k < 2; k++)
+        { var a = L(xs[0], ys[j], zs[k]); var b = L(xs[1], ys[j], zs[k]);
+          Gl.Vertex3(a.X, a.Y, a.Z); Gl.Vertex3(b.X, b.Y, b.Z); }
+        Gl.End();
+
+        // ---- ソーラーパネル (左右各1枚) ----
+        Gl.Color3(0.25f, 0.55f, 0.30f);
+        Gl.Begin(PrimitiveType.Lines);
+        foreach (int side in new[] { -1, 1 })
+        {
+            float xi = side * 60f;   // 船体端
+            float xo = side * 185f;  // パネル外端
+            float z0 = -35f;         // 前端 (ドッキングポート側)
+            float z1 = -105f;        // 後端
+            var p00 = L(xi, 0f, z0); var p10 = L(xo, 0f, z0);
+            var p01 = L(xi, 0f, z1); var p11 = L(xo, 0f, z1);
+            Gl.Vertex3(p00.X, p00.Y, p00.Z); Gl.Vertex3(p10.X, p10.Y, p10.Z); // 前辺
+            Gl.Vertex3(p01.X, p01.Y, p01.Z); Gl.Vertex3(p11.X, p11.Y, p11.Z); // 後辺
+            Gl.Vertex3(p00.X, p00.Y, p00.Z); Gl.Vertex3(p01.X, p01.Y, p01.Z); // 内辺
+            Gl.Vertex3(p10.X, p10.Y, p10.Z); Gl.Vertex3(p11.X, p11.Y, p11.Z); // 外辺
+            // 中央仕切り線
+            var pm0 = L((xi + xo) * 0.5f, 0f, z0); var pm1 = L((xi + xo) * 0.5f, 0f, z1);
+            Gl.Vertex3(pm0.X, pm0.Y, pm0.Z); Gl.Vertex3(pm1.X, pm1.Y, pm1.Z);
+        }
+        Gl.End();
+
+        // ---- エンジンノズル (後端2基) ----
+        Gl.Color3(1.0f, 0.45f, 0.1f);
+        Gl.Begin(PrimitiveType.Lines);
+        foreach (float ex in new[] { -28f, 28f })
+        {
+            var nc = L(ex, 0f, -140f);
+            for (int seg = 0; seg < 8; seg++)
+            {
+                float a0 = seg       * MathF.PI * 2f / 8f;
+                float a1 = (seg + 1) * MathF.PI * 2f / 8f;
+                var v0 = L(ex + MathF.Cos(a0) * 12f, MathF.Sin(a0) * 12f, -140f);
+                var v1 = L(ex + MathF.Cos(a1) * 12f, MathF.Sin(a1) * 12f, -140f);
+                Gl.Vertex3(v0.X, v0.Y, v0.Z); Gl.Vertex3(v1.X, v1.Y, v1.Z);
+                // ノズルの深さ方向ライン
+                var n2 = L(ex + MathF.Cos(a0) * 12f, MathF.Sin(a0) * 12f, -155f);
+                Gl.Vertex3(v0.X, v0.Y, v0.Z); Gl.Vertex3(n2.X, n2.Y, n2.Z);
+            }
+        }
+        Gl.End();
+        Gl.LineWidth(1.0f);
     }
 
     // ボーナスアイテム: 白(時間) or 緑(燃料) の光点
@@ -590,11 +683,11 @@ internal static class Renderer
             else if (gs.IsBonusStage)
             {
                 // クリア
-                string buf = "BONUS STAGE CLEAR!";
+                string buf = "DOCKING COMPLETE!";
                 Gl.Color3(1.0f, 0.85f, 0.0f);
                 DrawString(fw * 0.5f - (float)buf.Length * (scw + 1) * 0.5f, cy2, scw, sch, buf);
 
-                string spdb = $"SPEED BONUS  {gs.SpeedBonusScore}";
+                string spdb = $"DOCK BONUS   {gs.SpeedBonusScore}";
                 Gl.Color3(1.0f, 0.7f, 0.2f);
                 DrawString(fw * 0.5f - (float)spdb.Length * (scw2 + 1) * 0.5f, cy2 + 34, scw2, sch2, spdb);
 
@@ -644,36 +737,34 @@ internal static class Renderer
             float bcy = fh * 0.5f - 100.0f;
 
             // ヘッダー
-            string hdr = "** BONUS STAGE **";
+            string hdr = "** DOCKING SEQUENCE **";
             Gl.Color3(1.0f, 0.85f, 0.0f);
             DrawString(fw * 0.5f - (float)hdr.Length * (bcw + 1) * 0.5f, bcy, bcw, bch, hdr);
 
-            // 接近リング告知
-            string ringDesc = "THE RING IS COMING FOR YOU!";
-            Gl.Color3(1.0f, 0.4f, 1.0f);
+            // 母艦告知
+            string ringDesc = "NAVIGATE TO THE MOTHERSHIP";
+            Gl.Color3(0.7f, 0.9f, 1.0f);
             DrawString(fw * 0.5f - (float)ringDesc.Length * (mcw + 1) * 0.5f, bcy + 30, mcw, mch, ringDesc);
 
-            string hint = "STAY IN ITS PATH TO INTERCEPT";
+            string hint = "FLY THROUGH THE DOCKING PORT";
             Gl.Color3(0.85f, 0.85f, 0.95f);
             DrawString(fw * 0.5f - (float)hint.Length * (scw3 + 1) * 0.5f, bcy + 50, scw3, sch3, hint);
 
-            // 接近速度ボーナス表
-            float ringSpd = gs.Ring.MoveSpeed;
-            string th = $"CLOSING SPEED BONUS  (RING: {(int)ringSpd} PX/S)";
-            Gl.Color3(0.75f, 0.78f, 0.88f);
-            DrawString(fw * 0.5f - (float)th.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, th);
+            string limit = $"APPROACH SPEED MUST BE BELOW  {(int)C.DOCK_MAX_SPEED} PX/S";
+            Gl.Color3(1.0f, 0.45f, 0.15f);
+            DrawString(fw * 0.5f - (float)limit.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, limit);
 
+            // ドッキングボーナス表
             float tx  = fw * 0.5f - 90.0f;
-            float ty2 = bcy + 82.0f;
+            float ty2 = bcy + 85.0f;
             float tdy = 17.0f;
             (string spd, string pts, float r, float g, float b)[] rows =
             {
-                ("400+ px/s", "1000 pts", 1.0f, 0.50f, 0.0f),
-                ("300+ px/s",  "700 pts", 1.0f, 0.68f, 0.0f),
-                ("200+ px/s",  "500 pts", 1.0f, 0.88f, 0.1f),
-                ("150+ px/s",  "200 pts", 0.9f, 1.0f,  0.3f),
-                ("100+ px/s",  "100 pts", 0.7f, 1.0f,  0.5f),
-                (" <100 px/s",   "0 pts", 0.45f, 0.45f, 0.5f),
+                (" <10 px/s", "1000 pts", 0.3f, 1.0f,  0.5f),
+                (" <25 px/s",  "800 pts", 0.6f, 1.0f,  0.3f),
+                (" <40 px/s",  "600 pts", 1.0f, 0.88f, 0.1f),
+                (" <60 px/s",  "400 pts", 1.0f, 0.68f, 0.0f),
+                ("≥60 px/s",    "CRASH!", 1.0f, 0.20f, 0.0f),
             };
             for (int i = 0; i < rows.Length; i++)
             {
@@ -1033,15 +1124,28 @@ internal static class Renderer
                 DrawString(fw * 0.5f - 22, fh * 0.38f + 24, 8.0f, 12.0f, "+50");
             }
 
-            // ボーナスステージ: リング接近インジケーター
-            if (gs.IsBonusStage && gs.Ring.MoveSpeed > 0f)
+            // ボーナスステージ: 母艦距離 + ドッキング速度インジケーター
+            if (gs.IsBonusStage)
             {
-                float ringDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+                float dockDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+                float dockSpd  = speed; // Vec3.Len(gs.Vel) 相当
+
+                // 距離
                 float pulse = 0.7f + 0.3f * MathF.Sin((float)tick * 0.008f);
-                float urgency = MathF.Max(0f, 1f - ringDist / 400f); // 近づくほど赤く
-                Gl.Color3(0.6f + 0.4f * urgency * pulse, (1f - urgency) * 0.7f * pulse, (1f - urgency) * pulse);
-                string distStr = $"RING  {(int)ringDist}";
-                DrawString(fw * 0.5f - (float)distStr.Length * 5f, fh - 28f, 8.5f, 13.0f, distStr);
+                Gl.Color3(0.5f * pulse, 0.8f * pulse, 1.0f * pulse);
+                string distStr = $"DOCK  {(int)dockDist}";
+                DrawString(fw * 0.5f - (float)distStr.Length * 5f, fh - 46f, 8.5f, 13.0f, distStr);
+
+                // 速度警告: DOCK_MAX_SPEED 以上になると赤く点滅
+                bool tooFast = dockSpd > C.DOCK_MAX_SPEED && dockDist < 200f;
+                if (!tooFast || (tick / 180) % 2 == 0)
+                {
+                    float sr = dockSpd >= C.DOCK_MAX_SPEED ? 1.0f : dockSpd >= C.DOCK_MAX_SPEED * 0.7f ? 1.0f : 0.5f;
+                    float sg = dockSpd >= C.DOCK_MAX_SPEED ? 0.1f : dockSpd >= C.DOCK_MAX_SPEED * 0.7f ? 0.6f : 1.0f;
+                    Gl.Color3(sr, sg, 0.05f);
+                    string spdStr = $"SPD  {(int)dockSpd} / {(int)C.DOCK_MAX_SPEED}";
+                    DrawString(fw * 0.5f - (float)spdStr.Length * 5f, fh - 28f, 8.5f, 13.0f, spdStr);
+                }
             }
 
             if (gs.FuelWarning != 0 && (tick / 500) % 2 == 0)

@@ -37,6 +37,9 @@ internal static class C
 
     public const float WARN_HORIZON     = 5.0f;
     public const float WARN_DT_STEP     = 0.05f;
+
+    public const float DOCK_RING_RADIUS = 96.0f;  // ドッキングポートの半径
+    public const float DOCK_MAX_SPEED   = 60.0f;  // ドッキング成功の最大速度
 }
 
 // ==================== Vec3 ====================
@@ -109,7 +112,8 @@ internal struct Ring
     public Vec3  RotAxis;
     public float MoveSpeed;
     public Vec3  MoveDir;
-    public int   ColorType;  // 0=gold, 1=cyan(rotating), 2=magenta(moving)
+    public int   ColorType;  // 0=gold, 1=cyan(rotating), 2=magenta(moving), 3=white(docking)
+    public float Radius;     // リング半径 (0 の場合は C.RING_RADIUS を使用)
 }
 
 // ==================== Enums ====================
