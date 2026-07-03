@@ -171,8 +171,9 @@ internal static unsafe class Game
         ring.Pos     = Vec3.Wrap(Vec3.Add(playerPos, Vec3.Scale(awayDir, SPAWN_DIST)));
         ring.PrevPos = ring.Pos;
 
-        // リングの正面をプレイヤーに向ける: Normal = MoveDir = プレイヤー方向
-        ring.Normal  = Vec3.Scale(awayDir, -1.0f);
+        // ラップ後の実際の位置から ring→player 方向を再計算
+        // (ラップで境界をまたいだ場合 awayDir の逆が正しい方向とは限らないため)
+        ring.Normal = Vec3.Norm(Vec3.TorusDelta(playerPos, ring.Pos));
         Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
 
