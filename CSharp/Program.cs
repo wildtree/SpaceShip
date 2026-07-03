@@ -172,8 +172,7 @@ internal static unsafe class Game
         ring.PrevPos = ring.Pos;
 
         // ラップ後の実際の位置から ring→player 方向を再計算
-        // (ラップで境界をまたいだ場合 awayDir の逆が正しい方向とは限らないため)
-        ring.Normal = Vec3.Norm(Vec3.TorusDelta(playerPos, ring.Pos));
+        ring.Normal = Vec3.Norm(Vec3.TorusDelta(ring.Pos, playerPos));
         Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
 
@@ -212,6 +211,7 @@ internal static unsafe class Game
             gs.BonusStageNum++;
             gs.WaitRelease   = true; // 直前のキー入力を引き継がないよう解放待ち
             SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.Pos);
+            gs.RingTimer = 550.0f / gs.Ring.MoveSpeed + 2.5f; // 到達時間 + 余裕
             gs.State = GameStateEnum.BonusIntro;
             AudioSystem.PlayJingleBonusStart();
         }
@@ -1005,16 +1005,6 @@ internal static unsafe class Game
                             if (gs.RingsDone == 2) SpawnBonusItem(gs);
                             if (gs.RingsDone == 3) gs.ItemType = 0;
                         }
-                    }
-                }
-                else if (gs.IsBonusStage)
-                {
-                    // リングがプレイヤーを通り過ぎたら失敗
-                    Vec3 toPlayer = Vec3.TorusDelta(gs.Pos, gs.Ring.Pos);
-                    if (Vec3.Dot(toPlayer, gs.Ring.Normal) < -(C.RING_RADIUS + 20f))
-                    {
-                        FailBonusStage(gs);
-                        goto doRender;
                     }
                 }
             }
