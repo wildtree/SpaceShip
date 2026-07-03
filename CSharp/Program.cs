@@ -437,6 +437,36 @@ internal static unsafe class Game
                         default:                      anyKey = true; break;
                     }
                 }
+                if (ev.Type == (uint)EventType.GamepadAxisMotion)
+                {
+                    var axis = (GamepadAxis)ev.GAxis.Axis;
+                    var value = ev.GAxis.Value;
+                    switch (axis)
+                    {
+                        case GamepadAxis.LeftX:
+                            if (value < 0)
+                            {
+                                keyLeft = true; anyKey = true;        
+                            }
+                            if (value > 0)
+                            {
+                                keyRight = true; anyKey = true;        
+                            }
+                            break;
+                        case GamepadAxis.LeftY:
+                            if (value < 0)
+                            {
+                                keyUp = true; anyKey = true;        
+                            }
+                            if (value > 0)
+                            {
+                                keyDown = true; anyKey = true;
+                            }
+                            break;
+                        default:  
+                            anyKey = true; break;      
+                    }        
+                }
             }
 
             // ---- キー全解放待機 ----
