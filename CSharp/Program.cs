@@ -431,9 +431,9 @@ internal static unsafe class Game
                         case GamepadButton.DPadDown:  keyDown  = true; anyKey = true; break;
                         case GamepadButton.DPadLeft:  keyLeft  = true; anyKey = true; break;
                         case GamepadButton.DPadRight: keyRight = true; anyKey = true; break;
-                        case GamepadButton.South:     keyEnter = true; keyKA = true; anyKey = true; break;
+                        case GamepadButton.East:      keyEnter = true; keyKA = true; anyKey = true; break;
                         case GamepadButton.Start:     keyEnter = true; anyKey = true; break;
-                        case GamepadButton.East:      keyKB    = true; anyKey = true; break;
+                        case GamepadButton.South:     keyKB    = true; anyKey = true; break;
                         default:                      anyKey = true; break;
                     }
                 }
