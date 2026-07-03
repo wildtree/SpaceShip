@@ -216,7 +216,7 @@ internal static unsafe class Game
         gs.HasTimeItem     = false;
         gs.HasFuelItem     = false;
         // ボーナスはステージ番号を消費しない (gs.Stage はそのまま)
-        gs.StageClearTimer = 30f; // キー待ちなし: 30秒表示後に自動進行
+        gs.StageClearTimer = 10f; // キー待ちなし: 10秒表示後に自動進行
         gs.State = GameStateEnum.StageClear;
         AudioSystem.PlayJingleBonusFailed();
     }
@@ -901,7 +901,7 @@ internal static unsafe class Game
                 if (gs.StageClearPending && gs.ExcellentTimer <= 0f)
                 {
                     gs.StageClearPending = false;
-                    if (gs.IsBonusStage) gs.StageClearTimer = 30f;
+                    if (gs.IsBonusStage) gs.StageClearTimer = 10f;
                     gs.State = GameStateEnum.StageClear;
                 }
 
@@ -975,9 +975,9 @@ internal static unsafe class Game
                             FailBonusStage(gs); goto doRender; // 速度超過 → 衝突
                         }
                         gs.SpeedBonusScore = dockSpd < 10f ? 1000
-                                           : dockSpd < 25f ? 800
-                                           : dockSpd < 40f ? 600
-                                           : 400;
+                                           : dockSpd < 20f ? 800
+                                           : dockSpd < 30f ? 600
+                                           : 400; // < DOCK_MAX_SPEED(40)
                         gs.Score += gs.SpeedBonusScore;
                     }
 
@@ -1020,7 +1020,7 @@ internal static unsafe class Game
                         }
                         else
                         {
-                            if (gs.IsBonusStage) gs.StageClearTimer = 30f;
+                            if (gs.IsBonusStage) gs.StageClearTimer = 10f;
                             gs.State = GameStateEnum.StageClear;
                         }
                     }

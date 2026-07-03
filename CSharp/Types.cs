@@ -39,7 +39,7 @@ internal static class C
     public const float WARN_DT_STEP     = 0.05f;
 
     public const float DOCK_RING_RADIUS = 96.0f;  // ドッキングポートの半径
-    public const float DOCK_MAX_SPEED   = 60.0f;  // ドッキング成功の最大速度
+    public const float DOCK_MAX_SPEED   = 40.0f;  // ドッキング成功の最大速度
 }
 
 // ==================== Vec3 ====================

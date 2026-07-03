@@ -760,21 +760,27 @@ internal static class Renderer
             Gl.Color3(0.6f, 0.75f, 1.0f);
             DrawString(fw * 0.5f - (float)portInfo.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, portInfo);
 
+            // 母艦までの距離
+            float introDistVal = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+            string introDist = $"MOTHERSHIP DISTANCE  {(int)introDistVal} PX";
+            Gl.Color3(0.85f, 0.85f, 0.55f);
+            DrawString(fw * 0.5f - (float)introDist.Length * (scw3 + 1) * 0.5f, bcy + 79, scw3, sch3, introDist);
+
             string limit = $"APPROACH SPEED MUST BE BELOW  {(int)C.DOCK_MAX_SPEED} PX/S";
             Gl.Color3(1.0f, 0.45f, 0.15f);
-            DrawString(fw * 0.5f - (float)limit.Length * (scw3 + 1) * 0.5f, bcy + 79, scw3, sch3, limit);
+            DrawString(fw * 0.5f - (float)limit.Length * (scw3 + 1) * 0.5f, bcy + 93, scw3, sch3, limit);
 
             // ドッキングボーナス表
             float tx  = fw * 0.5f - 90.0f;
-            float ty2 = bcy + 98.0f;
+            float ty2 = bcy + 110.0f;
             float tdy = 17.0f;
             (string spd, string pts, float r, float g, float b)[] rows =
             {
                 (" <10 px/s", "1000 pts", 0.3f, 1.0f,  0.5f),
-                (" <25 px/s",  "800 pts", 0.6f, 1.0f,  0.3f),
-                (" <40 px/s",  "600 pts", 1.0f, 0.88f, 0.1f),
-                (" <60 px/s",  "400 pts", 1.0f, 0.68f, 0.0f),
-                ("≥60 px/s",    "CRASH!", 1.0f, 0.20f, 0.0f),
+                (" <20 px/s",  "800 pts", 0.6f, 1.0f,  0.3f),
+                (" <30 px/s",  "600 pts", 1.0f, 0.88f, 0.1f),
+                (" <40 px/s",  "400 pts", 1.0f, 0.68f, 0.0f),
+                ("≥40 px/s",    "CRASH!", 1.0f, 0.20f, 0.0f),
             };
             for (int i = 0; i < rows.Length; i++)
             {
@@ -1176,6 +1182,17 @@ internal static class Renderer
         // ---- Countdown ----
         if (gs.State == GameStateEnum.Countdown)
         {
+            // ボーナスステージ: カウントダウン中も母艦距離を表示
+            if (gs.IsBonusStage)
+            {
+                float cdDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+                ulong cdTick = GetTicks();
+                float pulse  = 0.7f + 0.3f * MathF.Sin((float)cdTick * 0.006f);
+                Gl.Color3(0.5f * pulse, 0.8f * pulse, 1.0f * pulse);
+                string cdStr = $"DOCK  {(int)cdDist}";
+                DrawString(fw * 0.5f - (float)cdStr.Length * 5f, fh - 46f, 8.5f, 13.0f, cdStr);
+            }
+
             int n = (int)MathF.Ceiling(gs.CountdownVal);
             float cy2 = fh * 0.5f - 50.0f;
             if (gs.CountdownVal > 0.0f && n >= 1)
