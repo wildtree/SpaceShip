@@ -648,20 +648,23 @@ internal static class Renderer
             Gl.Color3(1.0f, 0.85f, 0.0f);
             DrawString(fw * 0.5f - (float)hdr.Length * (bcw + 1) * 0.5f, bcy, bcw, bch, hdr);
 
-            // リング種別
-            string ringDesc = gs.BonusStageNum >= 3 ? "MOVING RING"
-                            : gs.BonusStageNum == 2  ? "ROTATING RING"
-                            : "STATIONARY RING";
-            Gl.Color3(0.6f, 0.88f, 1.0f);
+            // 接近リング告知
+            string ringDesc = "THE RING IS COMING FOR YOU!";
+            Gl.Color3(1.0f, 0.4f, 1.0f);
             DrawString(fw * 0.5f - (float)ringDesc.Length * (mcw + 1) * 0.5f, bcy + 30, mcw, mch, ringDesc);
 
-            // 速度ボーナス表
-            string th = "SPEED BONUS TABLE";
+            string hint = "STAY IN ITS PATH TO INTERCEPT";
+            Gl.Color3(0.85f, 0.85f, 0.95f);
+            DrawString(fw * 0.5f - (float)hint.Length * (scw3 + 1) * 0.5f, bcy + 50, scw3, sch3, hint);
+
+            // 接近速度ボーナス表
+            float ringSpd = gs.Ring.MoveSpeed;
+            string th = $"CLOSING SPEED BONUS  (RING: {(int)ringSpd} PX/S)";
             Gl.Color3(0.75f, 0.78f, 0.88f);
-            DrawString(fw * 0.5f - (float)th.Length * (scw3 + 1) * 0.5f, bcy + 56, scw3, sch3, th);
+            DrawString(fw * 0.5f - (float)th.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, th);
 
             float tx  = fw * 0.5f - 90.0f;
-            float ty2 = bcy + 72.0f;
+            float ty2 = bcy + 82.0f;
             float tdy = 17.0f;
             (string spd, string pts, float r, float g, float b)[] rows =
             {
@@ -1028,6 +1031,17 @@ internal static class Renderer
                 DrawString(fw * 0.5f - 81, fh * 0.38f, 12.0f, 19.0f, "EXCELLENT");
                 Gl.Color3(1.0f * alpha, 0.7f * alpha, 0.1f * alpha);
                 DrawString(fw * 0.5f - 22, fh * 0.38f + 24, 8.0f, 12.0f, "+50");
+            }
+
+            // ボーナスステージ: リング接近インジケーター
+            if (gs.IsBonusStage && gs.Ring.MoveSpeed > 0f)
+            {
+                float ringDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+                float pulse = 0.7f + 0.3f * MathF.Sin((float)tick * 0.008f);
+                float urgency = MathF.Max(0f, 1f - ringDist / 400f); // 近づくほど赤く
+                Gl.Color3(0.6f + 0.4f * urgency * pulse, (1f - urgency) * 0.7f * pulse, (1f - urgency) * pulse);
+                string distStr = $"RING  {(int)ringDist}";
+                DrawString(fw * 0.5f - (float)distStr.Length * 5f, fh - 28f, 8.5f, 13.0f, distStr);
             }
 
             if (gs.FuelWarning != 0 && (tick / 500) % 2 == 0)

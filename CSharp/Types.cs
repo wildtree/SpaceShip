@@ -102,6 +102,7 @@ internal struct Vec3
 internal struct Ring
 {
     public Vec3  Pos;
+    public Vec3  PrevPos;   // 前フレームの位置 (高速接近リングの通過判定に使用)
     public Vec3  Normal;
     public Vec3  Up;
     public float RotSpeed;

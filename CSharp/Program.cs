@@ -154,44 +154,33 @@ internal static unsafe class Game
         AudioSystem.PlayItemSpawn(gs.ItemType);
     }
 
-    // ボーナスステージ用リング: bonusNum 1=固定, 2=回転, 3+=回転+移動
-    private static void SpawnBonusRing(ref Ring ring, int bonusNum, bool hasNS, Vec3 nsPos)
+    // ボーナスステージ用リング: プレイヤーに向かって飛んでくる
+    // bonusNum が増えるほど速くなる
+    private static void SpawnBonusRing(ref Ring ring, int bonusNum, Vec3 playerPos)
     {
-        const float NS_MIN_DIST = 200.0f;
-        do
-        {
-            ring.Pos = new Vec3(
-                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
-                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
-                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
-        }
-        while (hasNS && Vec3.Len(Vec3.TorusDelta(ring.Pos, nsPos)) < NS_MIN_DIST);
+        const float SPAWN_DIST = 550.0f;
 
-        float theta = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
-        float phi   = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
-        ring.Normal = Vec3.Norm(new Vec3(
+        // プレイヤーからランダム方向 SPAWN_DIST 離れた位置にリングを生成
+        float theta  = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
+        float phi    = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
+        Vec3 awayDir = Vec3.Norm(new Vec3(
             MathF.Sin(phi) * MathF.Cos(theta),
             MathF.Sin(phi) * MathF.Sin(theta),
             MathF.Cos(phi)));
+
+        ring.Pos     = Vec3.Wrap(Vec3.Add(playerPos, Vec3.Scale(awayDir, SPAWN_DIST)));
+        ring.PrevPos = ring.Pos;
+
+        // リングの正面をプレイヤーに向ける: Normal = MoveDir = プレイヤー方向
+        ring.Normal  = Vec3.Scale(awayDir, -1.0f);
         Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
 
-        bool rot  = bonusNum >= 2;
-        bool move = bonusNum >= 3;
-        ring.RotSpeed = rot ? (MathF.PI / 30.0f) : 0.0f;
-        ring.RotAxis  = rot ? Vec3.Norm(Vec3.Cross(ring.Normal, ring.Up)) : new Vec3(0, 1, 0);
-        ring.MoveSpeed = move ? 50.0f : 0.0f;
-        if (move)
-        {
-            float mt = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
-            float mp = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
-            ring.MoveDir = Vec3.Norm(new Vec3(
-                MathF.Sin(mp) * MathF.Cos(mt),
-                MathF.Sin(mp) * MathF.Sin(mt),
-                MathF.Cos(mp)));
-        }
-        else { ring.MoveDir = new Vec3(0, 0, 0); }
-        ring.ColorType = move ? 2 : (rot ? 1 : 0);
+        ring.MoveDir   = ring.Normal;
+        ring.MoveSpeed = 180.0f + bonusNum * 20.0f; // bonusNum=1: 200, =2: 220, =3: 240...
+        ring.RotSpeed  = 0.0f;
+        ring.RotAxis   = new Vec3(0, 1, 0);
+        ring.ColorType = 2; // magenta: 接近ボーナスリング
     }
 
     // ボーナスステージ失敗: 得点なしでステージ終了
@@ -221,7 +210,7 @@ internal static unsafe class Game
             gs.IsBonusStage  = true;
             gs.BonusStageNum++;
             gs.WaitRelease   = true; // 直前のキー入力を引き継がないよう解放待ち
-            SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.HasNeutronStar, gs.NeutronStarPos);
+            SpawnBonusRing(ref gs.Ring, gs.BonusStageNum, gs.Pos);
             gs.State = GameStateEnum.BonusIntro;
             AudioSystem.PlayJingleBonusStart();
         }
@@ -240,16 +229,34 @@ internal static unsafe class Game
         Vec3  dPrev    = Vec3.TorusDelta(gs.PrevPos, gs.Ring.Pos);
         float sideCurr = Vec3.Dot(dCurr, gs.Ring.Normal);
         float sidePrev = Vec3.Dot(dPrev, gs.Ring.Normal);
-        if ((sideCurr >= 0.0f) == (sidePrev >= 0.0f)) return 0;
 
-        float t       = sidePrev / (sidePrev - sideCurr);
-        Vec3  crossPt = Vec3.Add(gs.PrevPos, Vec3.Scale(Vec3.Sub(gs.Pos, gs.PrevPos), t));
-        Vec3  toRing  = Vec3.TorusDelta(crossPt, gs.Ring.Pos);
-        float along   = Vec3.Dot(toRing, gs.Ring.Normal);
-        Vec3  inPlane = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
-        float d       = Vec3.Len(inPlane);
-        if (d > C.RING_RADIUS) return 0;
-        return (d <= 8.0f) ? 2 : 1;
+        // 標準チェック: プレイヤーがリング面を横断
+        if ((sideCurr >= 0f) != (sidePrev >= 0f))
+        {
+            float t      = sidePrev / (sidePrev - sideCurr);
+            Vec3 crossPt = Vec3.Add(gs.PrevPos, Vec3.Scale(Vec3.Sub(gs.Pos, gs.PrevPos), t));
+            Vec3 toRing  = Vec3.TorusDelta(crossPt, gs.Ring.Pos);
+            float along  = Vec3.Dot(toRing, gs.Ring.Normal);
+            Vec3 inPlane = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
+            float d      = Vec3.Len(inPlane);
+            if (d <= C.RING_RADIUS) return (d <= 8.0f) ? 2 : 1;
+        }
+
+        // 高速リングチェック: リング面がプレイヤーを横断 (ring-comes-to-you 用)
+        float sideStart = Vec3.Dot(Vec3.TorusDelta(gs.PrevPos, gs.Ring.PrevPos), gs.Ring.Normal);
+        if ((sideStart >= 0f) != (sideCurr >= 0f))
+        {
+            float t2      = sideStart / (sideStart - sideCurr);
+            Vec3 playerAt = Vec3.Add(gs.PrevPos, Vec3.Scale(Vec3.Sub(gs.Pos, gs.PrevPos), t2));
+            Vec3 ringAt   = Vec3.Add(gs.Ring.PrevPos, Vec3.Scale(Vec3.Sub(gs.Ring.Pos, gs.Ring.PrevPos), t2));
+            Vec3 toRing   = Vec3.TorusDelta(playerAt, ringAt);
+            float along   = Vec3.Dot(toRing, gs.Ring.Normal);
+            Vec3 inPlane  = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
+            float d       = Vec3.Len(inPlane);
+            if (d <= C.RING_RADIUS) return (d <= 8.0f) ? 2 : 1;
+        }
+
+        return 0;
     }
 
     private static bool CheckRingHit(GameState gs)
@@ -821,7 +828,7 @@ internal static unsafe class Game
 
                 AudioSystem.Thruster(thrusting || braking || rotating);
 
-                gs.CollisionWarning = PredictCollision(gs) ? 1 : 0;
+                gs.CollisionWarning = (!gs.IsBonusStage && PredictCollision(gs)) ? 1 : 0;
                 AudioSystem.WarningTone(gs.CollisionWarning != 0);
 
                 gs.FuelWarning = (gs.Fuel <= gs.InitialFuel * 0.30f) ? 1 : 0;
@@ -839,6 +846,7 @@ internal static unsafe class Game
                 // DRAG_K = 0 のため速度減衰なし
 
                 // Ring update
+                gs.Ring.PrevPos = gs.Ring.Pos; // 高速接近リングの通過判定に使用
                 if (gs.Ring.RotSpeed != 0.0f)
                 {
                     float angle    = gs.Ring.RotSpeed * dt;
@@ -953,7 +961,11 @@ internal static unsafe class Game
                         if (gs.IsBonusStage)
                         {
                             // ボーナスはステージ番号を消費しない
-                            float spd = Vec3.Len(gs.Vel);
+                            // 接近速度 = リング速度 + プレイヤーのリング方向成分
+                            float ringSpd = gs.Ring.MoveSpeed;
+                            Vec3 toRingDir = Vec3.Scale(gs.Ring.MoveDir, -1.0f);
+                            float playerContrib = MathF.Max(0f, Vec3.Dot(gs.Vel, toRingDir));
+                            float spd = ringSpd + playerContrib;
                             gs.SpeedBonusScore = spd >= 400 ? 1000
                                                : spd >= 300 ? 700
                                                : spd >= 200 ? 500
@@ -961,6 +973,7 @@ internal static unsafe class Game
                                                : spd >= 100 ? 100
                                                : 0;
                             gs.Score += gs.SpeedBonusScore;
+                            gs.Ring.MoveSpeed = 0f; // リングを停止してミス検出の誤作動を防ぐ
                         }
                         else
                         {
@@ -991,6 +1004,16 @@ internal static unsafe class Game
                             if (gs.RingsDone == 2) SpawnBonusItem(gs);
                             if (gs.RingsDone == 3) gs.ItemType = 0;
                         }
+                    }
+                }
+                else if (gs.IsBonusStage)
+                {
+                    // リングがプレイヤーを通り過ぎたら失敗
+                    Vec3 toPlayer = Vec3.TorusDelta(gs.Pos, gs.Ring.Pos);
+                    if (Vec3.Dot(toPlayer, gs.Ring.Normal) < -(C.RING_RADIUS + 20f))
+                    {
+                        FailBonusStage(gs);
+                        goto doRender;
                     }
                 }
             }
