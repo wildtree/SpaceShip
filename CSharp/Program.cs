@@ -160,7 +160,14 @@ internal static unsafe class Game
     // bonusNum が増えるほど速くなる
     private static void SpawnBonusRing(ref Ring ring, int bonusNum, Vec3 playerPos)
     {
-        // 母艦ドッキングポート: プレイヤーから 600-750 ユニット離れた位置に静止
+        // bonusNum が上がるほど: ポートが小さく・母艦が速く動く
+        float radius    = bonusNum == 1 ? C.DOCK_RING_RADIUS          // 96
+                        : bonusNum == 2 ? C.DOCK_RING_RADIUS * 0.75f  // 72
+                        :                 C.DOCK_RING_RADIUS * 0.56f;  // 54
+        float moveSpeed = bonusNum == 1 ? 0.0f
+                        : bonusNum == 2 ? 35.0f
+                        :                 75.0f;
+
         float spawnDist = 600.0f + (float)Random.Shared.NextDouble() * 150.0f;
 
         float theta  = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
@@ -178,12 +185,25 @@ internal static unsafe class Game
         Vec3 arb = (MathF.Abs(ring.Normal.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         ring.Up = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(ring.Normal, arb)), ring.Normal));
 
-        ring.MoveDir   = new Vec3(0, 0, 0);
-        ring.MoveSpeed = 0.0f;                       // 母艦は静止
-        ring.RotSpeed  = 0.4f;                       // ドッキングポートが自転
-        ring.RotAxis   = ring.Normal;                // 面法線回りに回転 (向きは変わらない)
-        ring.ColorType = 3;                          // white: ドッキングポート
-        ring.Radius    = C.DOCK_RING_RADIUS;
+        // 移動方向: Normal に垂直な横方向 (「逃げる母艦を追う」感覚)
+        if (moveSpeed > 0.0f)
+        {
+            Vec3 right = Vec3.Norm(Vec3.Cross(ring.Normal, ring.Up));
+            float mt   = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
+            ring.MoveDir = Vec3.Norm(Vec3.Add(
+                Vec3.Scale(right,  MathF.Cos(mt)),
+                Vec3.Scale(ring.Up, MathF.Sin(mt))));
+        }
+        else
+        {
+            ring.MoveDir = new Vec3(0, 0, 0);
+        }
+
+        ring.MoveSpeed = moveSpeed;
+        ring.RotSpeed  = 0.4f;
+        ring.RotAxis   = ring.Normal;
+        ring.ColorType = 3;
+        ring.Radius    = radius;
     }
 
     // ボーナスステージ失敗: 得点なしでステージ終了

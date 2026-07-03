@@ -750,13 +750,23 @@ internal static class Renderer
             Gl.Color3(0.85f, 0.85f, 0.95f);
             DrawString(fw * 0.5f - (float)hint.Length * (scw3 + 1) * 0.5f, bcy + 50, scw3, sch3, hint);
 
+            // 回数別の条件
+            int   bn        = gs.BonusStageNum;
+            float portR     = bn == 1 ? C.DOCK_RING_RADIUS : bn == 2 ? C.DOCK_RING_RADIUS * 0.75f : C.DOCK_RING_RADIUS * 0.56f;
+            float msSpeed   = bn == 1 ? 0f : bn == 2 ? 35f : 75f;
+            string portInfo = msSpeed > 0f
+                ? $"PORT RADIUS {(int)portR}  |  MOTHERSHIP SPEED {(int)msSpeed} PX/S"
+                : $"PORT RADIUS {(int)portR}  |  MOTHERSHIP STATIONARY";
+            Gl.Color3(0.6f, 0.75f, 1.0f);
+            DrawString(fw * 0.5f - (float)portInfo.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, portInfo);
+
             string limit = $"APPROACH SPEED MUST BE BELOW  {(int)C.DOCK_MAX_SPEED} PX/S";
             Gl.Color3(1.0f, 0.45f, 0.15f);
-            DrawString(fw * 0.5f - (float)limit.Length * (scw3 + 1) * 0.5f, bcy + 65, scw3, sch3, limit);
+            DrawString(fw * 0.5f - (float)limit.Length * (scw3 + 1) * 0.5f, bcy + 79, scw3, sch3, limit);
 
             // ドッキングボーナス表
             float tx  = fw * 0.5f - 90.0f;
-            float ty2 = bcy + 85.0f;
+            float ty2 = bcy + 98.0f;
             float tdy = 17.0f;
             (string spd, string pts, float r, float g, float b)[] rows =
             {
