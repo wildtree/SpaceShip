@@ -444,21 +444,21 @@ internal static unsafe class Game
                     switch (axis)
                     {
                         case GamepadAxis.LeftX:
-                            if (value < 0)
+                            if (value < -PAD_DEAD)
                             {
                                 keyLeft = true; anyKey = true;        
                             }
-                            if (value > 0)
+                            if (value > PAD_DEAD)
                             {
                                 keyRight = true; anyKey = true;        
                             }
                             break;
                         case GamepadAxis.LeftY:
-                            if (value < 0)
+                            if (value < -PAD_DEAD)
                             {
                                 keyUp = true; anyKey = true;        
                             }
-                            if (value > 0)
+                            if (value > PAD_DEAD)
                             {
                                 keyDown = true; anyKey = true;
                             }
@@ -487,7 +487,9 @@ internal static unsafe class Game
                             GetGamepadButton(s_gamepad, GamepadButton.DPadUp)   ||
                             GetGamepadButton(s_gamepad, GamepadButton.DPadDown) ||
                             GetGamepadButton(s_gamepad, GamepadButton.DPadLeft) ||
-                            GetGamepadButton(s_gamepad, GamepadButton.DPadRight);
+                            GetGamepadButton(s_gamepad, GamepadButton.DPadRight) ||
+                            Math.Abs(GetGamepadAxis(s_gamepad, GamepadAxis.LeftX)) > PAD_DEAD ||
+                            Math.Abs(GetGamepadAxis(s_gamepad, GamepadAxis.LeftY)) > PAD_DEAD;
                 if (held) anyKey = false;
                 else      gs.WaitRelease = false;
             }
@@ -749,8 +751,8 @@ internal static unsafe class Game
                     padDown  = ly >  PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadDown);
                     padLeft  = lx < -PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadLeft);
                     padRight = lx >  PAD_DEAD || GetGamepadButton(s_gamepad, GamepadButton.DPadRight);
-                    padThrust = GetGamepadButton(s_gamepad, GamepadButton.South); // A ボタン
-                    padBrake  = GetGamepadButton(s_gamepad, GamepadButton.East);  // B ボタン
+                    padThrust = GetGamepadButton(s_gamepad, GamepadButton.East); // A ボタン
+                    padBrake  = GetGamepadButton(s_gamepad, GamepadButton.South);  // B ボタン
                 }
 
                 float shipRotMul   = (gs.Ship == ShipType.Agile) ? 2.0f : 1.0f;
