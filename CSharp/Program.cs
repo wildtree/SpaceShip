@@ -71,9 +71,11 @@ internal static unsafe class Game
     }
 
     private static void SpawnRing(ref Ring ring, int ringNum, int stage,
-                                   bool hasNeutronStar = false, Vec3 nsPos = default)
+                                   bool hasNeutronStar = false, Vec3 nsPos = default,
+                                   bool hasPrevRing = false, Vec3 prevRingPos = default)
     {
-        const float NS_MIN_DIST = 200.0f;
+        const float NS_MIN_DIST   = 200.0f;
+        const float RING_MIN_DIST = 200.0f;
         do
         {
             ring.Pos = new Vec3(
@@ -81,7 +83,8 @@ internal static unsafe class Game
                 (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)),
                 (float)(Random.Shared.Next(0, (int)C.SPACE_SIZE)));
         }
-        while (hasNeutronStar && Vec3.Len(Vec3.TorusDelta(ring.Pos, nsPos)) < NS_MIN_DIST);
+        while ((hasNeutronStar && Vec3.Len(Vec3.TorusDelta(ring.Pos, nsPos))      < NS_MIN_DIST) ||
+               (hasPrevRing    && Vec3.Len(Vec3.TorusDelta(ring.Pos, prevRingPos)) < RING_MIN_DIST));
 
         float theta = (float)Random.Shared.NextDouble() * 2.0f * MathF.PI;
         float phi   = MathF.Acos(2.0f * (float)Random.Shared.NextDouble() - 1.0f);
@@ -1026,7 +1029,8 @@ internal static unsafe class Game
                     }
                     else
                     {
-                        SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos);
+                        Vec3 prevRingPos = gs.Ring.Pos;
+                        SpawnRing(ref gs.Ring, gs.RingsDone + 1, gs.Stage, gs.HasNeutronStar, gs.NeutronStarPos, true, prevRingPos);
                         if (!gs.IsBonusStage)
                         {
                             if (gs.RingsDone == 2) SpawnBonusItem(gs);
