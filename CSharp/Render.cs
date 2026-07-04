@@ -1116,6 +1116,25 @@ internal static class Renderer
             if (gs.IsBonusStage) Gl.Color3(1.0f, 0.85f, 0.0f);
             else                 Gl.Color3(0.95f, 0.88f, 0.12f);
             DrawFloatInt(sx + 28, sy, bigCw, bigCh, speed, 4);
+
+            // ボーナスステージ: 母艦距離を速度の直下に大きく表示
+            if (gs.IsBonusStage)
+            {
+                float dockDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
+                float sy2 = sy + bigCh + 12f;
+
+                // 残距離に応じて色を変える
+                float dr, dg, db;
+                if      (dockDist > 400f) { dr = 0.3f; dg = 0.9f; db = 1.0f; }   // 遠い: シアン
+                else if (dockDist > 200f) { dr = 0.3f; dg = 1.0f; db = 0.35f; }  // 中間: 緑
+                else if (dockDist > 100f) { dr = 1.0f; dg = 0.65f; db = 0.1f; }  // 近い: オレンジ
+                else                      { dr = 1.0f; dg = 0.15f; db = 0.05f; } // 至近: 赤
+
+                Gl.Color3(0.28f, 0.35f, 0.52f);
+                DrawString(sx, sy2 + 5, cw, ch, "DST");
+                Gl.Color3(dr, dg, db);
+                DrawFloatInt(sx + 28, sy2, bigCw, bigCh, dockDist, 4);
+            }
         }
 
         // ---- Playing warnings ----
@@ -1140,27 +1159,15 @@ internal static class Renderer
                 DrawString(fw * 0.5f - 22, fh * 0.38f + 24, 8.0f, 12.0f, "+50");
             }
 
-            // ボーナスステージ: 母艦距離 + ドッキング速度インジケーター
+            // ボーナスステージ: 速度超過＋至近距離で中央に BRAKE! 警告
             if (gs.IsBonusStage)
             {
                 float dockDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
-                float dockSpd  = speed; // Vec3.Len(gs.Vel) 相当
-
-                // 距離
-                float pulse = 0.7f + 0.3f * MathF.Sin((float)tick * 0.008f);
-                Gl.Color3(0.5f * pulse, 0.8f * pulse, 1.0f * pulse);
-                string distStr = $"DOCK  {(int)dockDist}";
-                DrawString(fw * 0.5f - (float)distStr.Length * 5f, fh - 46f, 8.5f, 13.0f, distStr);
-
-                // 速度警告: DOCK_MAX_SPEED 以上になると赤く点滅
-                bool tooFast = dockSpd > C.DOCK_MAX_SPEED && dockDist < 200f;
-                if (!tooFast || (tick / 180) % 2 == 0)
+                if (speed > C.DOCK_MAX_SPEED && dockDist < 250f && (tick / 150) % 2 == 0)
                 {
-                    float sr = dockSpd >= C.DOCK_MAX_SPEED ? 1.0f : dockSpd >= C.DOCK_MAX_SPEED * 0.7f ? 1.0f : 0.5f;
-                    float sg = dockSpd >= C.DOCK_MAX_SPEED ? 0.1f : dockSpd >= C.DOCK_MAX_SPEED * 0.7f ? 0.6f : 1.0f;
-                    Gl.Color3(sr, sg, 0.05f);
-                    string spdStr = $"SPD  {(int)dockSpd} / {(int)C.DOCK_MAX_SPEED}";
-                    DrawString(fw * 0.5f - (float)spdStr.Length * 5f, fh - 28f, 8.5f, 13.0f, spdStr);
+                    float p = 0.8f + 0.2f * MathF.Sin((float)tick * 0.03f);
+                    Gl.Color3(1.0f, p * 0.1f, 0.0f);
+                    DrawString(fw * 0.5f - 60, fh * 0.42f, 14.0f, 22.0f, "BRAKE!");
                 }
             }
 
@@ -1182,17 +1189,6 @@ internal static class Renderer
         // ---- Countdown ----
         if (gs.State == GameStateEnum.Countdown)
         {
-            // ボーナスステージ: カウントダウン中も母艦距離を表示
-            if (gs.IsBonusStage)
-            {
-                float cdDist = Vec3.Len(Vec3.TorusDelta(gs.Pos, gs.Ring.Pos));
-                ulong cdTick = GetTicks();
-                float pulse  = 0.7f + 0.3f * MathF.Sin((float)cdTick * 0.006f);
-                Gl.Color3(0.5f * pulse, 0.8f * pulse, 1.0f * pulse);
-                string cdStr = $"DOCK  {(int)cdDist}";
-                DrawString(fw * 0.5f - (float)cdStr.Length * 5f, fh - 46f, 8.5f, 13.0f, cdStr);
-            }
-
             int n = (int)MathF.Ceiling(gs.CountdownVal);
             float cy2 = fh * 0.5f - 50.0f;
             if (gs.CountdownVal > 0.0f && n >= 1)
