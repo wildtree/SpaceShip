@@ -1049,16 +1049,40 @@ internal static unsafe class Game
             GetWindowSize(window, out int ww, out int wh);
             if (wh == 0) wh = 1;
 
+            // アスペクト比を維持したビューポートを計算 (レター/ピラーボックス)
+            float targetAspect = C.WINDOW_WIDTH / (float)C.WINDOW_HEIGHT;
+            int vpW, vpH, vpX, vpY;
+            if ((float)ww / wh > targetAspect)
+            {   // ウィンドウが横長: 左右に黒帯
+                vpH = wh; vpW = (int)(wh * targetAspect);
+                vpX = (ww - vpW) / 2; vpY = 0;
+            }
+            else
+            {   // ウィンドウが縦長: 上下に黒帯
+                vpW = ww; vpH = (int)(ww / targetAspect);
+                vpX = 0; vpY = (wh - vpH) / 2;
+            }
+            if (vpH == 0) vpH = 1;
+
+            // 全画面を黒でクリア (黒帯部分)
+            Gl.Disable(EnableCap.ScissorTest);
             Gl.Viewport(0, 0, (uint)ww, (uint)wh);
+            Gl.ClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+            Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
+
+            // ゲーム描画領域にビューポートとシザーを設定
+            Gl.Enable(EnableCap.ScissorTest);
+            Gl.Scissor(vpX, vpY, (uint)vpW, (uint)vpH);
+            Gl.Viewport(vpX, vpY, (uint)vpW, (uint)vpH);
             Gl.ClearColor(0.0f, 0.0f, 0.015f, 1.0f);
             Gl.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit);
 
-            // --- Perspective projection ---
+            // --- Perspective projection (常に固定アスペクト比) ---
             Gl.MatrixMode(MatrixMode.Projection);
             Gl.LoadIdentity();
             float fovRad = C.FOV_DEG * MathF.PI / 180.0f;
             float f      = 1.0f / MathF.Tan(fovRad * 0.5f);
-            float asp    = (float)ww / (float)wh;
+            float asp    = targetAspect;
             float nr     = C.NEAR_PLANE, fr = C.FAR_PLANE;
             float[] proj = {
                 f / asp, 0,  0,                          0,
@@ -1085,10 +1109,11 @@ internal static unsafe class Game
             Renderer.RenderStars(gs.Pos, Stars);
             Renderer.RenderRing(ref gs.Ring, gs.Pos);
             if (gs.IsBonusStage) Renderer.RenderMothership(ref gs.Ring, gs.Pos);
-            Renderer.RenderBonusItem(gs, gs.Pos, wh);
+            Renderer.RenderBonusItem(gs, gs.Pos, vpH);
             Renderer.RenderNeutronStar(gs, gs.Pos);
-            Renderer.RenderHud(gs, ww, wh);
+            Renderer.RenderHud(gs, C.WINDOW_WIDTH, C.WINDOW_HEIGHT);
 
+            Gl.Disable(EnableCap.ScissorTest);
             GLSwapWindow(window);
         }
 
