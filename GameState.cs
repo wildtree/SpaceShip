@@ -55,6 +55,10 @@ internal sealed class GameState
     public int           CountdownLastN  = (int)C.COUNTDOWN_START + 1;
     public float         ExcellentTimer  = 0f;
     public bool          StageClearPending = false; // Excellent表示中にStageClear遷移を保留
+    public RivalShip     Rival             = default;
+    public Bullet        Bullet            = default;
+    public int           FloatScore        = 0;
+    public float         FloatScoreTimer   = 0f;
 
     public void ReOrthogonalize()
     {

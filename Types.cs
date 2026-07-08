@@ -40,6 +40,17 @@ internal static class C
 
     public const float DOCK_RING_RADIUS = 96.0f;  // ドッキングポートの半径
     public const float DOCK_MAX_SPEED   = 40.0f;  // ドッキング成功の最大速度
+
+    // ライバル機・質量弾
+    public const float RIVAL_MAX_SPEED      = 50.0f;
+    public const float RIVAL_RADIUS         = 8.0f;
+    public const float RIVAL_RESPAWN_TIME   = 10.0f;
+    public const int   RIVAL_DESTROY_SCORE  = 500;
+    public const int   RING_DESTROY_PENALTY = 300;
+    public const int   RIVAL_RING_PENALTY   = 100;
+    public const float BULLET_RADIUS        = 4.0f;
+    public const float BULLET_SPEED_BONUS   = 100.0f;
+    public const float BULLET_LIFETIME      = 12.0f;
 }
 
 // ==================== Vec3 ====================
@@ -114,6 +125,28 @@ internal struct Ring
     public Vec3  MoveDir;
     public int   ColorType;  // 0=gold, 1=cyan(rotating), 2=magenta(moving), 3=white(docking)
     public float Radius;     // リング半径 (0 の場合は C.RING_RADIUS を使用)
+}
+
+// ==================== RivalShip ====================
+internal struct RivalShip
+{
+    public bool  Active;
+    public float RespawnTimer;  // >0 = 復活カウントダウン中
+    public Vec3  Pos;
+    public Vec3  PrevPos;
+    public Vec3  Vel;
+    public Vec3  Fwd;
+    public Vec3  Up;
+}
+
+// ==================== Bullet ====================
+internal struct Bullet
+{
+    public bool  Active;
+    public Vec3  Pos;
+    public Vec3  PrevPos;
+    public Vec3  Vel;
+    public float Lifetime;
 }
 
 // ==================== Enums ====================

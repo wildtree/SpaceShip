@@ -209,6 +209,186 @@ internal static unsafe class Game
         ring.Radius    = radius;
     }
 
+    // スコア増減 + 画面ポップアップ表示
+    private static void GainScore(GameState gs, int delta)
+    {
+        gs.Score          = Math.Max(0, gs.Score + delta);
+        gs.FloatScore     = delta;
+        gs.FloatScoreTimer = 2.5f;
+    }
+
+    // リングを自機から200以上離れた場所に再配置 (外観・属性は維持)
+    private static void RelocateRing(GameState gs)
+    {
+        const float MIN_DIST = 200.0f;
+        for (int attempt = 0; attempt < 200; attempt++)
+        {
+            Vec3 pos = new Vec3(
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+            if (Vec3.Len(Vec3.TorusDelta(pos, gs.Pos)) < MIN_DIST) continue;
+            gs.Ring.Pos     = pos;
+            gs.Ring.PrevPos = pos;
+            return;
+        }
+        gs.Ring.Pos     = new Vec3(
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+            (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+        gs.Ring.PrevPos = gs.Ring.Pos;
+    }
+
+    // ライバル機を自機から200以上離れた場所にスポーン
+    private static void SpawnRival(GameState gs)
+    {
+        const float MIN_DIST = 200.0f;
+        Vec3 pos = default;
+        for (int attempt = 0; attempt < 200; attempt++)
+        {
+            pos = new Vec3(
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE),
+                (float)Random.Shared.Next(0, (int)C.SPACE_SIZE));
+            if (Vec3.Len(Vec3.TorusDelta(pos, gs.Pos)) >= MIN_DIST) break;
+        }
+        gs.Rival.Pos     = pos;
+        gs.Rival.PrevPos = pos;
+        gs.Rival.Vel     = new Vec3(0, 0, 0);
+        gs.Rival.Fwd     = Vec3.Norm(Vec3.TorusDelta(pos, gs.Ring.Pos));
+        Vec3 arb = (MathF.Abs(gs.Rival.Fwd.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+        gs.Rival.Up      = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(gs.Rival.Fwd, arb)), gs.Rival.Fwd));
+        gs.Rival.Active       = true;
+        gs.Rival.RespawnTimer = 0f;
+    }
+
+    // ライバル機がリングを通過したか判定
+    private static bool RivalPassesRing(GameState gs)
+    {
+        Vec3  dCurr    = Vec3.TorusDelta(gs.Rival.Pos,     gs.Ring.Pos);
+        Vec3  dPrev    = Vec3.TorusDelta(gs.Rival.PrevPos, gs.Ring.Pos);
+        float sideCurr = Vec3.Dot(dCurr, gs.Ring.Normal);
+        float sidePrev = Vec3.Dot(dPrev, gs.Ring.Normal);
+        if ((sideCurr >= 0f) == (sidePrev >= 0f)) return false;
+        float t      = sidePrev / (sidePrev - sideCurr);
+        Vec3 crossPt = Vec3.Add(gs.Rival.PrevPos, Vec3.Scale(Vec3.Sub(gs.Rival.Pos, gs.Rival.PrevPos), t));
+        Vec3 toRing  = Vec3.TorusDelta(crossPt, gs.Ring.Pos);
+        float along  = Vec3.Dot(toRing, gs.Ring.Normal);
+        Vec3 inPlane = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, along));
+        return Vec3.Len(inPlane) <= gs.Ring.Radius;
+    }
+
+    // ライバル機 AI 更新・移動・リング通過判定
+    private static void UpdateRival(GameState gs, float dt)
+    {
+        if (!gs.Rival.Active)
+        {
+            gs.Rival.RespawnTimer -= dt;
+            if (gs.Rival.RespawnTimer <= 0f) SpawnRival(gs);
+            return;
+        }
+
+        // AI: 常にリングへ直進
+        Vec3 toRing = Vec3.TorusDelta(gs.Rival.Pos, gs.Ring.Pos);
+        float dist  = Vec3.Len(toRing);
+        if (dist > 0.001f)
+        {
+            Vec3 dir = Vec3.Scale(toRing, 1f / dist);
+            gs.Rival.Vel = Vec3.Scale(dir, C.RIVAL_MAX_SPEED);
+            gs.Rival.Fwd = dir;
+            Vec3 arb = (MathF.Abs(dir.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
+            gs.Rival.Up  = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(dir, arb)), dir));
+        }
+
+        gs.Rival.PrevPos = gs.Rival.Pos;
+        gs.Rival.Pos     = Vec3.Wrap(Vec3.Add(gs.Rival.Pos, Vec3.Scale(gs.Rival.Vel, dt)));
+
+        if (RivalPassesRing(gs))
+        {
+            RelocateRing(gs);
+            GainScore(gs, -C.RIVAL_RING_PENALTY);
+            AudioSystem.PlayJingleRivalPass();
+        }
+    }
+
+    // 質量弾が現在のリングのトーラス管に当たっているか判定
+    private static bool BulletHitsRing(GameState gs)
+    {
+        float rr    = gs.Ring.Radius;
+        float tubeR = rr > C.RING_RADIUS ? C.RING_TUBE_RADIUS * 2.5f : C.RING_TUBE_RADIUS;
+        // 現在位置と前フレーム位置の両方でチェック
+        foreach (Vec3 bp in new[] { gs.Bullet.Pos, gs.Bullet.PrevPos })
+        {
+            Vec3 delta   = Vec3.TorusDelta(gs.Ring.Pos, bp);
+            float along  = Vec3.Dot(delta, gs.Ring.Normal);
+            Vec3 inPlane = Vec3.Sub(delta, Vec3.Scale(gs.Ring.Normal, along));
+            float r      = Vec3.Len(inPlane);
+            float d      = MathF.Sqrt((r - rr) * (r - rr) + along * along);
+            if (d < tubeR + C.BULLET_RADIUS) return true;
+        }
+        return false;
+    }
+
+    // 質量弾の更新・衝突判定 (衝突時は gs.State を変更する可能性あり)
+    private static void UpdateBullet(GameState gs, float dt)
+    {
+        if (!gs.Bullet.Active) return;
+
+        gs.Bullet.Lifetime -= dt;
+        if (gs.Bullet.Lifetime <= 0f) { gs.Bullet.Active = false; return; }
+
+        // 中性子星重力
+        if (gs.HasNeutronStar)
+        {
+            Vec3 nsDelta = Vec3.TorusDelta(gs.Bullet.Pos, gs.NeutronStarPos);
+            float nsDist = Vec3.Len(nsDelta);
+            if (nsDist > 0.001f)
+            {
+                float r    = nsDist / 100.0f;
+                float gAcc = 36.0f / (r * r);
+                gs.Bullet.Vel = Vec3.Add(gs.Bullet.Vel, Vec3.Scale(Vec3.Norm(nsDelta), gAcc * dt));
+            }
+        }
+
+        gs.Bullet.PrevPos = gs.Bullet.Pos;
+        gs.Bullet.Pos     = Vec3.Wrap(Vec3.Add(gs.Bullet.Pos, Vec3.Scale(gs.Bullet.Vel, dt)));
+
+        // ライバル機に命中
+        if (gs.Rival.Active)
+        {
+            float rivalDist = Vec3.Len(Vec3.TorusDelta(gs.Bullet.Pos, gs.Rival.Pos));
+            if (rivalDist < C.BULLET_RADIUS + C.RIVAL_RADIUS)
+            {
+                gs.Bullet.Active       = false;
+                gs.Rival.Active        = false;
+                gs.Rival.RespawnTimer  = C.RIVAL_RESPAWN_TIME;
+                GainScore(gs, C.RIVAL_DESTROY_SCORE);
+                AudioSystem.PlayBulletExplosion();
+                return;
+            }
+        }
+
+        // リングに命中 (ボーナスステージは除外)
+        if (!gs.IsBonusStage && BulletHitsRing(gs))
+        {
+            gs.Bullet.Active = false;
+            RelocateRing(gs);
+            GainScore(gs, -C.RING_DESTROY_PENALTY);
+            AudioSystem.PlayBulletExplosion();
+            return;
+        }
+
+        // 自機に命中 → ゲームオーバー
+        float playerDist = Vec3.Len(Vec3.TorusDelta(gs.Bullet.Pos, gs.Pos));
+        if (playerDist < C.BULLET_RADIUS + C.SHIP_RADIUS)
+        {
+            gs.Bullet.Active  = false;
+            gs.State          = GameStateEnum.Exploding;
+            gs.ExplodeTimer   = C.EXPLODE_DURATION;
+            AudioSystem.PlayExplosion();
+        }
+    }
+
     // ボーナスステージ失敗: 得点なしでステージ終了
     private static void FailBonusStage(GameState gs)
     {
@@ -227,8 +407,11 @@ internal static unsafe class Game
     // 次ステージを開始: ボーナスステージ判定 → BonusIntro or Countdown
     private static void StartNextStage(GameState gs)
     {
-        gs.BonusFailed = false;
-        gs.Vel         = new Vec3(0, 0, 0); // 各ステージ開始時に速度リセット
+        gs.BonusFailed    = false;
+        gs.Vel            = new Vec3(0, 0, 0); // 各ステージ開始時に速度リセット
+        gs.Bullet.Active  = false;             // 弾をリセット
+        gs.Rival.Active   = false;             // ライバルをリセット (通常ステージなら即スポーン)
+        gs.Rival.RespawnTimer = 0f;
         SpawnNeutronStar(gs);
         if (gs.PendingBonus)
         {
@@ -410,6 +593,7 @@ internal static unsafe class Game
             bool keyUp   = false, keyDown  = false;
             bool keyLeft = false, keyRight = false, keyEnter = false;
             bool keyKA   = false, keyKB    = false; // コナミコマンド用 A/B ボタン
+            bool keyFire = false;                   // 質量弾発射 (ワンショット)
 
             while (PollEvent(out Event ev))
             {
@@ -431,6 +615,7 @@ internal static unsafe class Game
                         case Keycode.A:       keyKA    = true; anyKey = true; break;
                         case Keycode.X:
                         case Keycode.B:       keyKB    = true; anyKey = true; break;
+                        case Keycode.Space:   keyFire  = true; anyKey = true; break;
                         default:              anyKey = true; break;
                     }
                 }
@@ -469,6 +654,7 @@ internal static unsafe class Game
                         case GamepadButton.East:      keyEnter = true; keyKA = true; anyKey = true; break;
                         case GamepadButton.Start:     keyEnter = true; anyKey = true; break;
                         case GamepadButton.South:     keyKB    = true; anyKey = true; break;
+                        case GamepadButton.North:     keyFire  = true; anyKey = true; break;
                         default:                      anyKey = true; break;
                     }
                 }
@@ -518,6 +704,7 @@ internal static unsafe class Game
                 if (s_gamepad != IntPtr.Zero)
                     held |= GetGamepadButton(s_gamepad, GamepadButton.South) ||
                             GetGamepadButton(s_gamepad, GamepadButton.East)  ||
+                            GetGamepadButton(s_gamepad, GamepadButton.North) ||
                             GetGamepadButton(s_gamepad, GamepadButton.Start) ||
                             GetGamepadButton(s_gamepad, GamepadButton.DPadUp)   ||
                             GetGamepadButton(s_gamepad, GamepadButton.DPadDown) ||
@@ -773,6 +960,7 @@ internal static unsafe class Game
             // ---- Playing ----
             if (gs.State == GameStateEnum.Playing)
             {
+                if (gs.FloatScoreTimer > 0f) gs.FloatScoreTimer -= dt;
                 var keys = GetKeyboardState(out _);
 
                 // ゲームパッドの入力を取得
@@ -854,6 +1042,20 @@ internal static unsafe class Game
                     gs.Fuel -= C.FUEL_BRAKE * dt;
                 }
 
+                // 質量弾発射 (ボーナスステージ以外)
+                if (keyFire && !gs.Bullet.Active)
+                {
+                    float spd = Vec3.Len(gs.Vel);
+                    Vec3 dir  = (spd > 0.1f) ? Vec3.Norm(gs.Vel) : gs.Fwd;
+                    Vec3 startPos = Vec3.Wrap(Vec3.Add(gs.Pos,
+                        Vec3.Scale(dir, C.SHIP_RADIUS + C.BULLET_RADIUS + 2f)));
+                    gs.Bullet.Pos      = startPos;
+                    gs.Bullet.PrevPos  = startPos;
+                    gs.Bullet.Vel      = Vec3.Add(gs.Vel, Vec3.Scale(dir, C.BULLET_SPEED_BONUS));
+                    gs.Bullet.Lifetime = C.BULLET_LIFETIME;
+                    gs.Bullet.Active   = true;
+                }
+
                 AudioSystem.Thruster(thrusting || braking || rotating);
 
                 gs.CollisionWarning = (!gs.IsBonusStage && PredictCollision(gs)) ? 1 : 0;
@@ -883,6 +1085,13 @@ internal static unsafe class Game
                 }
                 if (gs.Ring.MoveSpeed > 0.0f)
                     gs.Ring.Pos = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.MoveDir, gs.Ring.MoveSpeed * dt)));
+
+                // ライバル機 AI 更新
+                if (!gs.IsBonusStage) UpdateRival(gs, dt);
+
+                // 質量弾更新
+                UpdateBullet(gs, dt);
+                if (gs.State != GameStateEnum.Playing) goto doRender; // 弾がゲームオーバーを引き起こした
 
                 // 中性子星重力 (ステージ16以降)
                 if (gs.HasNeutronStar)
@@ -1115,6 +1324,8 @@ internal static unsafe class Game
             if (gs.IsBonusStage) Renderer.RenderMothership(ref gs.Ring, gs.Pos);
             Renderer.RenderBonusItem(gs, gs.Pos, vpH);
             Renderer.RenderNeutronStar(gs, gs.Pos);
+            Renderer.RenderRivalShip(ref gs.Rival, gs.Pos);
+            Renderer.RenderBullet(ref gs.Bullet, gs.Pos);
             Renderer.RenderHud(gs, C.WINDOW_WIDTH, C.WINDOW_HEIGHT);
 
             Gl.Disable(EnableCap.ScissorTest);

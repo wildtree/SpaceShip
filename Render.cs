@@ -258,6 +258,94 @@ internal static class Renderer
         Gl.LineWidth(1.0f);
     }
 
+    // ライバル機: 赤いワイヤーフレーム宇宙船
+    public static void RenderRivalShip(ref RivalShip rival, Vec3 shipPos)
+    {
+        if (!rival.Active) return;
+        Vec3 raw = Vec3.Sub(rival.Pos, shipPos);
+        float drawDist = C.SPACE_SIZE * 0.6f;
+        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dz = -1; dz <= 1; dz++)
+        {
+            Vec3 rel = new(raw.X + dx * C.SPACE_SIZE,
+                           raw.Y + dy * C.SPACE_SIZE,
+                           raw.Z + dz * C.SPACE_SIZE);
+            if (Vec3.Len(rel) > drawDist) continue;
+            RenderRivalShipAt(rel, rival.Fwd, rival.Up);
+        }
+    }
+
+    private static void RenderRivalShipAt(Vec3 rel, Vec3 fwd, Vec3 up)
+    {
+        Vec3 right = Vec3.Norm(Vec3.Cross(fwd, up));
+        Vec3 L(float f, float r, float u) => new Vec3(
+            rel.X + fwd.X * f + right.X * r + up.X * u,
+            rel.Y + fwd.Y * f + right.Y * r + up.Y * u,
+            rel.Z + fwd.Z * f + right.Z * r + up.Z * u);
+        void V(Vec3 v) { Gl.Vertex3(v.X, v.Y, v.Z); }
+
+        Gl.LineWidth(1.5f);
+        Gl.Color3(1.0f, 0.35f, 0.35f); // 赤
+        Gl.Begin(PrimitiveType.Lines);
+
+        // 胴体: 4本の縦通材 (-10 ≤ f ≤ +10, ±3 right, ±2 up)
+        V(L(-10,-3,-2)); V(L(10,-3,-2));
+        V(L(-10, 3,-2)); V(L(10, 3,-2));
+        V(L(-10,-3, 2)); V(L(10,-3, 2));
+        V(L(-10, 3, 2)); V(L(10, 3, 2));
+        // 前断面
+        V(L(10,-3,-2)); V(L(10, 3,-2)); V(L(10, 3,-2)); V(L(10, 3, 2));
+        V(L(10, 3, 2)); V(L(10,-3, 2)); V(L(10,-3, 2)); V(L(10,-3,-2));
+        // 後断面
+        V(L(-10,-3,-2)); V(L(-10, 3,-2)); V(L(-10, 3,-2)); V(L(-10, 3, 2));
+        V(L(-10, 3, 2)); V(L(-10,-3, 2)); V(L(-10,-3, 2)); V(L(-10,-3,-2));
+        // ノーズコーン (4稜線)
+        V(L(16,0,0)); V(L(10,-3,-2)); V(L(16,0,0)); V(L(10, 3,-2));
+        V(L(16,0,0)); V(L(10, 3, 2)); V(L(16,0,0)); V(L(10,-3, 2));
+        // 主翼 (後退翼)
+        V(L( 5,-3,0)); V(L(-8,-18,0));  // 左前縁
+        V(L(-5,-3,0)); V(L(-8,-18,0));  // 左後縁
+        V(L( 5, 3,0)); V(L(-8, 18,0));  // 右前縁
+        V(L(-5, 3,0)); V(L(-8, 18,0));  // 右後縁
+        V(L( 5,-3,0)); V(L(-5,-3,0));   // 左付け根
+        V(L( 5, 3,0)); V(L(-5, 3,0));   // 右付け根
+        // 垂直尾翼
+        V(L(-10,0, 2)); V(L(-16,0, 7));
+        V(L(-10,0,-2)); V(L(-16,0, 7));
+        V(L(-10,0, 2)); V(L(-10,0,-2));
+
+        Gl.End();
+        Gl.LineWidth(1.0f);
+    }
+
+    // 質量弾: ピンクの輝点
+    public static void RenderBullet(ref Bullet bullet, Vec3 shipPos)
+    {
+        if (!bullet.Active) return;
+        Vec3 rel = Vec3.TorusDelta(shipPos, bullet.Pos);
+
+        Gl.DepthMask(false);
+        Gl.Enable(EnableCap.PointSmooth);
+        Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
+
+        Gl.PointSize(16f);
+        Gl.Color4(1.0f, 0.40f, 0.65f, 0.18f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
+
+        Gl.PointSize(9f);
+        Gl.Color4(1.0f, 0.60f, 0.80f, 0.65f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
+
+        Gl.PointSize(5f);
+        Gl.Color4(1.0f, 0.90f, 0.96f, 1.0f);
+        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
+
+        Gl.Disable(EnableCap.PointSmooth);
+        Gl.PointSize(1f);
+        Gl.DepthMask(true);
+    }
+
     // ボーナスアイテム: 白(時間) or 緑(燃料) の光点
     public static void RenderBonusItem(GameState gs, Vec3 shipPos, int screenH)
     {
@@ -546,6 +634,19 @@ internal static class Renderer
             DrawString(mx + 14, fy2 + 16, cw * 0.75f, ch * 0.75f, slabels[(int)gs.Ship]);
         }
 
+        // ===== 質量弾インジケータ (左ブロック下部) =====
+        {
+            bool rdy  = !gs.Bullet.Active;
+            float bix = 6.0f, biy = panelY + 52.0f;
+            Gl.Color3(rdy ? 0.05f : 0.40f, rdy ? 0.85f : 0.12f, rdy ? 0.28f : 0.12f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(bix,     biy); Gl.Vertex2(bix + 8, biy);
+            Gl.Vertex2(bix + 8, biy + 8); Gl.Vertex2(bix, biy + 8);
+            Gl.End();
+            Gl.Color3(rdy ? 0.40f : 0.60f, rdy ? 1.0f : 0.35f, rdy ? 0.55f : 0.35f);
+            DrawString(bix + 11, biy - 1, cw * 0.8f, ch * 0.8f, rdy ? "SHOT RDY" : "SHOT OUT");
+        }
+
         // ===== アイテム保持インジケータ (タイマーバー右端あたり) =====
         {
             float ix = mx + barW + 52.0f;
@@ -645,6 +746,18 @@ internal static class Renderer
         {
             Gl.Color3(1.0f, 0.15f, 0.15f);
             DrawString(fw * 0.5f - 56, panelY - 22, cw * 1.3f, ch * 1.3f, "NO FUEL");
+        }
+
+        // スコアポップアップ (弾命中・ライバルリング通過)
+        if (gs.FloatScoreTimer > 0f)
+        {
+            float alpha = Math.Min(1.0f, gs.FloatScoreTimer);
+            bool pos = gs.FloatScore >= 0;
+            Gl.Color4(1.0f, pos ? 0.85f : 0.30f, pos ? 0.10f : 0.10f, alpha);
+            string fs = (gs.FloatScore >= 0 ? "+" : "") + gs.FloatScore.ToString();
+            float fscw = 12.0f, fsch = 18.0f;
+            DrawString(fw * 0.5f - (float)fs.Length * (fscw + 1) * 0.5f,
+                       fh * 0.35f, fscw, fsch, fs);
         }
 
         // ---- Stage clear ----

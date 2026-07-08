@@ -22,6 +22,7 @@ internal static class AudioSystem
     private static IntPtr s_jingleStream   = IntPtr.Zero; // ジングル専用
     private static IntPtr s_bonusStream    = IntPtr.Zero; // ボーナスジングル専用 (s_jingleStreamに割り込まれない)
     private static IntPtr s_uiStream       = IntPtr.Zero; // メニューUI操作音専用
+    private static IntPtr s_effectStream  = IntPtr.Zero; // 炸裂音・その他単発効果音
 
     public static void Init()
     {
@@ -52,6 +53,9 @@ internal static class AudioSystem
 
         s_uiStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
         if (s_uiStream != IntPtr.Zero) ResumeAudioStreamDevice(s_uiStream);
+
+        s_effectStream = OpenAudioDeviceStream(AudioDeviceDefaultPlayback, in spec, null, IntPtr.Zero);
+        if (s_effectStream != IntPtr.Zero) ResumeAudioStreamDevice(s_effectStream);
     }
 
     public static void Cleanup()
@@ -64,6 +68,7 @@ internal static class AudioSystem
         if (s_jingleStream    != IntPtr.Zero) { DestroyAudioStream(s_jingleStream);    s_jingleStream    = IntPtr.Zero; }
         if (s_bonusStream     != IntPtr.Zero) { DestroyAudioStream(s_bonusStream);     s_bonusStream     = IntPtr.Zero; }
         if (s_uiStream        != IntPtr.Zero) { DestroyAudioStream(s_uiStream);        s_uiStream        = IntPtr.Zero; }
+        if (s_effectStream    != IntPtr.Zero) { DestroyAudioStream(s_effectStream);    s_effectStream    = IntPtr.Zero; }
     }
 
     private static unsafe void PushFloats(IntPtr stream, float[] buf, int count)
@@ -501,6 +506,46 @@ internal static class AudioSystem
             PushFloats(s_ringStream, buf, batch);
             pushed += batch;
         }
+    }
+
+    // 炸裂音: 質量弾命中時の鋭い爆発 (短め・金属的)
+    public static void PlayBulletExplosion()
+    {
+        if (s_effectStream == IntPtr.Zero) return;
+        ClearAudioStream(s_effectStream);
+        const int   SR    = 22050;
+        const float DUR   = 0.40f;
+        const float DECAY = 10.0f;
+        int total = (int)(SR * DUR);
+        float lpf = 0.0f, phase = 0f;
+        float[] buf = new float[512];
+        for (int pushed = 0; pushed < total; )
+        {
+            int batch = total - pushed;
+            if (batch > 512) batch = 512;
+            for (int i = 0; i < batch; i++)
+            {
+                float t   = (float)(pushed + i) / SR;
+                float env = MathF.Exp(-DECAY * t);
+                float r   = ((float)Random.Shared.NextDouble()) * 2.0f - 1.0f;
+                lpf = 0.40f * r + 0.60f * lpf;
+                float metallic = MathF.Sin(phase * 2f * MathF.PI);
+                phase += 600f / SR; if (phase >= 1f) phase -= 1f;
+                buf[i] = (lpf * 0.60f + metallic * 0.40f) * env * 0.65f;
+            }
+            PushFloats(s_effectStream, buf, batch);
+            pushed += batch;
+        }
+    }
+
+    // ライバル機リング通過: 残念な下降フレーズ D5→B4→G4
+    public static void PlayJingleRivalPass()
+    {
+        if (s_jingleStream == IntPtr.Zero) return;
+        ClearAudioStream(s_jingleStream);
+        PushJingleNote(587.3f, 0.18f, 0.40f, 6f, 0.20f, 0.02f); // D5
+        PushJingleNote(493.9f, 0.18f, 0.37f, 6f, 0.20f, 0.02f); // B4
+        PushJingleNote(392.0f, 0.55f, 0.38f, 3f, 0.22f, 0f);    // G4 (ホールド)
     }
 
     public static void PlayExplosion()
