@@ -319,31 +319,45 @@ internal static class Renderer
         Gl.LineWidth(1.0f);
     }
 
-    // 質量弾: ピンクの輝点
+    // 質量弾: 深度テスト無効・グラデーショントレイル＋3軸クロス
     public static void RenderBullet(ref Bullet bullet, Vec3 shipPos)
     {
         if (!bullet.Active) return;
         Vec3 rel = Vec3.TorusDelta(shipPos, bullet.Pos);
 
-        Gl.DepthMask(false);
-        Gl.Enable(EnableCap.PointSmooth);
-        Gl.Hint(HintTarget.PointSmoothHint, HintMode.Nicest);
+        // トレイル: 進行方向に伸びるグラデーションライン
+        float spd = Vec3.Len(bullet.Vel);
+        if (spd > 0.1f)
+        {
+            Vec3 dir = Vec3.Scale(bullet.Vel, 1f / spd);
+            float trailLen = Math.Min(70f, spd * 0.45f);
+            Vec3 tail = Vec3.Sub(rel, Vec3.Scale(dir, trailLen));
+            Gl.LineWidth(2.5f);
+            Gl.Begin(PrimitiveType.Lines);
+            Gl.Color4(1.0f, 0.90f, 0.96f, 1.0f); // 先端: 白ピンク
+            Gl.Vertex3(rel.X, rel.Y, rel.Z);
+            Gl.Color4(1.0f, 0.35f, 0.60f, 0.0f); // 末端: フェードアウト
+            Gl.Vertex3(tail.X, tail.Y, tail.Z);
+            Gl.End();
+        }
 
-        Gl.PointSize(16f);
-        Gl.Color4(1.0f, 0.40f, 0.65f, 0.18f);
-        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
+        // 弾頭: 3軸クロス (どの角度からでも見える立体的な星型)
+        const float cs = 8.0f;
+        Gl.LineWidth(2.5f);
+        Gl.Color3(1.0f, 0.80f, 0.92f);
+        Gl.Begin(PrimitiveType.Lines);
+        Gl.Vertex3(rel.X - cs, rel.Y,      rel.Z     ); Gl.Vertex3(rel.X + cs, rel.Y,      rel.Z     );
+        Gl.Vertex3(rel.X,      rel.Y - cs, rel.Z     ); Gl.Vertex3(rel.X,      rel.Y + cs, rel.Z     );
+        Gl.Vertex3(rel.X,      rel.Y,      rel.Z - cs); Gl.Vertex3(rel.X,      rel.Y,      rel.Z + cs);
+        Gl.End();
 
-        Gl.PointSize(9f);
-        Gl.Color4(1.0f, 0.60f, 0.80f, 0.65f);
-        Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
-
+        // 中心点
         Gl.PointSize(5f);
-        Gl.Color4(1.0f, 0.90f, 0.96f, 1.0f);
+        Gl.Color3(1.0f, 1.0f, 1.0f);
         Gl.Begin(PrimitiveType.Points); Gl.Vertex3(rel.X, rel.Y, rel.Z); Gl.End();
-
-        Gl.Disable(EnableCap.PointSmooth);
         Gl.PointSize(1f);
-        Gl.DepthMask(true);
+
+        Gl.LineWidth(1.0f);
     }
 
     // ボーナスアイテム: 白(時間) or 緑(燃料) の光点
