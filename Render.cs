@@ -769,6 +769,75 @@ internal static class Renderer
             DrawString(fw * 0.5f - 56, panelY - 22, cw * 1.3f, ch * 1.3f, "NO FUEL");
         }
 
+        // ===== リング残数 (上部中央・目立つ表示) =====
+        if (!gs.IsBonusStage)
+        {
+            int   remaining = C.RINGS_PER_STAGE - gs.RingsDone;
+            const int   N   = C.RINGS_PER_STAGE;
+            const float IR  = 11f;   // アイコン半径
+            const float SP  = 30f;   // アイコン間隔
+            float iy = 22f;
+            float sx = fw * 0.5f - (N - 1) * SP * 0.5f;
+
+            // 背景ストリップ
+            Gl.Color4(0f, 0f, 0.05f, 0.72f);
+            Gl.Begin(PrimitiveType.Quads);
+            Gl.Vertex2(sx - IR - 6,             iy - IR - 5);
+            Gl.Vertex2(sx + (N-1)*SP + IR + 50, iy - IR - 5);
+            Gl.Vertex2(sx + (N-1)*SP + IR + 50, iy + IR + 5);
+            Gl.Vertex2(sx - IR - 6,             iy + IR + 5);
+            Gl.End();
+
+            const int ISEG = 20;
+            for (int i = 0; i < N; i++)
+            {
+                float cx  = sx + i * SP;
+                bool  rem = (i >= gs.RingsDone);
+
+                if (rem)
+                {
+                    // 残りリング: 金色塗りつぶし + 輝くアウトライン
+                    Gl.Color3(1.0f, 0.82f, 0.08f);
+                    Gl.Begin(PrimitiveType.TriangleFan);
+                    Gl.Vertex2(cx, iy);
+                    for (int s = 0; s <= ISEG; s++)
+                    {
+                        float a = s * 2f * MathF.PI / ISEG;
+                        Gl.Vertex2(cx + MathF.Cos(a) * IR, iy + MathF.Sin(a) * IR);
+                    }
+                    Gl.End();
+                    Gl.LineWidth(1.5f);
+                    Gl.Color3(1.0f, 0.95f, 0.55f);
+                    Gl.Begin(PrimitiveType.LineLoop);
+                    for (int s = 0; s < ISEG; s++)
+                    {
+                        float a = s * 2f * MathF.PI / ISEG;
+                        Gl.Vertex2(cx + MathF.Cos(a) * IR, iy + MathF.Sin(a) * IR);
+                    }
+                    Gl.End();
+                    Gl.LineWidth(1.0f);
+                }
+                else
+                {
+                    // 通過済み: 暗い緑のアウトラインのみ
+                    Gl.Color3(0.20f, 0.32f, 0.20f);
+                    Gl.Begin(PrimitiveType.LineLoop);
+                    for (int s = 0; s < ISEG; s++)
+                    {
+                        float a = s * 2f * MathF.PI / ISEG;
+                        Gl.Vertex2(cx + MathF.Cos(a) * IR, iy + MathF.Sin(a) * IR);
+                    }
+                    Gl.End();
+                }
+            }
+
+            // 残数を大きく右に表示 (縦中央揃え)
+            float numCw = cw * 2.2f, numCh = ch * 2.2f;
+            float numX  = sx + (N-1)*SP + IR + 10;
+            Gl.Color3(1.0f, 0.88f, 0.15f);
+            DrawString(numX, iy - numCh * 0.5f, numCw, numCh, remaining.ToString());
+        }
+
         // スコアポップアップ (弾命中・ライバルリング通過)
         if (gs.FloatScoreTimer > 0f)
         {

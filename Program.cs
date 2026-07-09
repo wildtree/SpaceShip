@@ -303,13 +303,40 @@ internal static unsafe class Game
             }
         }
 
-        // AI: 目標速度 = リング方向へ RIVAL_MAX_SPEED
-        //     速度誤差を解消するよう向きを変えてスラスター噴射 (ブレーキなし・ハードモード相当)
+        // AI: ゲート経由でリング法線方向から通過 (ブレーキなし・ハードモード相当)
+        // リング平面に対して斜め方向から突っ込むとチューブ衝突するため、
+        // 法線軸上のゲートを経由してから法線方向に正面突入させる
         Vec3 toRing    = Vec3.TorusDelta(gs.Rival.Pos, gs.Ring.Pos);
         float ringDist = Vec3.Len(toRing);
         if (ringDist > 0.001f)
         {
-            Vec3 desiredVel = Vec3.Scale(Vec3.Norm(toRing), C.RIVAL_MAX_SPEED);
+            // 法線方向の成分と横ズレ量を計算
+            float alongN  = Vec3.Dot(toRing, gs.Ring.Normal);
+            Vec3  latVec  = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, alongN));
+            float latDist = Vec3.Len(latVec);
+
+            // ターゲット選択:
+            //   近距離 or 既に軸上 → リング中心へ直進
+            //   遠距離 and 軸外    → 法線軸上の2ゲートから近い方を経由
+            const float GATE_DIST = 150f;  // ゲートのリング中心からの距離
+            const float PASS_DIST =  80f;  // 直進に切り替える距離
+            Vec3 target;
+            if (ringDist < PASS_DIST || latDist < 15f)
+            {
+                target = gs.Ring.Pos;
+            }
+            else
+            {
+                Vec3  gA = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.Normal,  GATE_DIST)));
+                Vec3  gB = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.Normal, -GATE_DIST)));
+                float dA = Vec3.Len(Vec3.TorusDelta(gs.Rival.Pos, gA));
+                float dB = Vec3.Len(Vec3.TorusDelta(gs.Rival.Pos, gB));
+                target   = dA <= dB ? gA : gB;
+            }
+
+            Vec3 toTarget = Vec3.TorusDelta(gs.Rival.Pos, target);
+            if (Vec3.Len(toTarget) < 0.001f) toTarget = toRing;
+            Vec3 desiredVel = Vec3.Scale(Vec3.Norm(toTarget), C.RIVAL_MAX_SPEED);
             Vec3 velError   = Vec3.Sub(desiredVel, gs.Rival.Vel);
             float errLen    = Vec3.Len(velError);
 
