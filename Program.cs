@@ -361,12 +361,44 @@ internal static unsafe class Game
         gs.Rival.PrevPos = gs.Rival.Pos;
         gs.Rival.Pos     = Vec3.Wrap(Vec3.Add(gs.Rival.Pos, Vec3.Scale(gs.Rival.Vel, dt)));
 
+        // リングへの衝突 → 爆散
+        if (CheckRingHitAt(gs.Rival.Pos, gs, C.RIVAL_RADIUS))
+        {
+            gs.Rival.Active       = false;
+            gs.Rival.RespawnTimer = C.RIVAL_RESPAWN_TIME;
+            AudioSystem.PlayBulletExplosion();
+            return;
+        }
+
         if (RivalPassesRing(gs))
         {
             RelocateRing(gs);
             GainScore(gs, -C.RIVAL_RING_PENALTY);
             AudioSystem.PlayJingleRivalPass();
         }
+    }
+
+    // 任意の位置がリングのトーラス管に当たっているか判定
+    private static bool CheckRingHitAt(Vec3 pos, GameState gs, float entityRadius)
+    {
+        Vec3  raw  = Vec3.Sub(gs.Ring.Pos, pos);
+        float hitR = C.RING_TUBE_RADIUS + entityRadius;
+        for (int dx = -1; dx <= 1; dx++)
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dz = -1; dz <= 1; dz++)
+        {
+            Vec3 d = new(raw.X + dx * C.SPACE_SIZE,
+                         raw.Y + dy * C.SPACE_SIZE,
+                         raw.Z + dz * C.SPACE_SIZE);
+            if (Vec3.Len(d) > C.SPACE_SIZE * 0.6f) continue;
+            Vec3  s      = Vec3.Scale(d, -1.0f);
+            float alongN = Vec3.Dot(s, gs.Ring.Normal);
+            Vec3  ip     = Vec3.Sub(s, Vec3.Scale(gs.Ring.Normal, alongN));
+            float r      = Vec3.Len(ip);
+            float dist   = MathF.Sqrt((r - gs.Ring.Radius) * (r - gs.Ring.Radius) + alongN * alongN);
+            if (dist < hitR) return true;
+        }
+        return false;
     }
 
     // 質量弾が現在のリングのトーラス管に当たっているか判定
@@ -528,28 +560,8 @@ internal static unsafe class Game
         return 0;
     }
 
-    private static bool CheckRingHit(GameState gs)
-    {
-        Vec3  raw  = Vec3.Sub(gs.Ring.Pos, gs.Pos);
-        float hitR = C.RING_TUBE_RADIUS + C.SHIP_RADIUS;
-
-        for (int dx = -1; dx <= 1; dx++)
-        for (int dy = -1; dy <= 1; dy++)
-        for (int dz = -1; dz <= 1; dz++)
-        {
-            Vec3 d = new(raw.X + dx * C.SPACE_SIZE,
-                         raw.Y + dy * C.SPACE_SIZE,
-                         raw.Z + dz * C.SPACE_SIZE);
-            if (Vec3.Len(d) > C.SPACE_SIZE * 0.6f) continue;
-            Vec3  s      = Vec3.Scale(d, -1.0f);
-            float alongN = Vec3.Dot(s, gs.Ring.Normal);
-            Vec3  ip     = Vec3.Sub(s, Vec3.Scale(gs.Ring.Normal, alongN));
-            float r      = Vec3.Len(ip);
-            float dist   = MathF.Sqrt((r - gs.Ring.Radius) * (r - gs.Ring.Radius) + alongN * alongN);
-            if (dist < hitR) return true;
-        }
-        return false;
-    }
+    private static bool CheckRingHit(GameState gs) =>
+        CheckRingHitAt(gs.Pos, gs, C.SHIP_RADIUS);
 
     private static bool PredictCollision(GameState gs)
     {
