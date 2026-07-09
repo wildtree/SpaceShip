@@ -303,54 +303,75 @@ internal static unsafe class Game
             }
         }
 
-        // AI: ゲート経由でリング法線方向から通過 (ブレーキなし・ハードモード相当)
-        // リング平面に対して斜め方向から突っ込むとチューブ衝突するため、
-        // 法線軸上のゲートを経由してから法線方向に正面突入させる
+        // AI: 運動学的速度計画 + ゲート経由法線方向アプローチ
+        //
+        // 設計方針:
+        //   ・目標地点に「到達速度」で届くよう逆算した最大許容速度でしか加速しない
+        //     → vMax = sqrt(arrivalSpeed² + 2 * EFF_DECEL * dist_to_target)
+        //   ・速度超過時は velError が後ろ向きになるので、船首を反転してスラスターで能動減速
+        //   ・ゲート (リング法線軸上の点) を経由することで斜め衝突を回避
         Vec3 toRing    = Vec3.TorusDelta(gs.Rival.Pos, gs.Ring.Pos);
         float ringDist = Vec3.Len(toRing);
         if (ringDist > 0.001f)
         {
-            // 法線方向の成分と横ズレ量を計算
             float alongN  = Vec3.Dot(toRing, gs.Ring.Normal);
             Vec3  latVec  = Vec3.Sub(toRing, Vec3.Scale(gs.Ring.Normal, alongN));
             float latDist = Vec3.Len(latVec);
 
-            // ターゲット選択:
-            //   近距離 or 既に軸上 → リング中心へ直進
-            //   遠距離 and 軸外    → 法線軸上の2ゲートから近い方を経由
-            const float GATE_DIST = 150f;  // ゲートのリング中心からの距離
-            const float PASS_DIST =  80f;  // 直進に切り替える距離
-            Vec3 target;
-            if (ringDist < PASS_DIST || latDist < 15f)
+            // ---- ターゲット選択 ----
+            // 軸上に乗っていて近距離 → リング中心へ直進
+            // それ以外 → 法線軸上の2ゲートから近い方を経由
+            const float GATE_DIST   = 160f;  // ゲートのリング中心からの距離
+            const float PASS_DIST   =  70f;  // 直進切り替え距離
+            const float GATE_ARRIVE =  55f;  // ゲート通過目標速度 (m/s)
+            const float RING_ARRIVE =  40f;  // リング通過目標速度 (m/s)
+            // 回転オーバーヘッドを保守的に見込んだ有効減速度
+            // MAIN_ACCEL=40 だが 180° 回転に ~1.3s かかるためその分を差し引く
+            const float EFF_DECEL   =  15f;
+
+            Vec3  target;
+            float arrivalSpeed;
+            if ((ringDist < PASS_DIST && latDist < 25f) || latDist < 12f)
             {
-                target = gs.Ring.Pos;
+                // 軸上かつ近い → リング中心へ
+                target       = gs.Ring.Pos;
+                arrivalSpeed = RING_ARRIVE;
             }
             else
             {
+                // 法線軸上の近い方のゲートへ
                 Vec3  gA = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.Normal,  GATE_DIST)));
                 Vec3  gB = Vec3.Wrap(Vec3.Add(gs.Ring.Pos, Vec3.Scale(gs.Ring.Normal, -GATE_DIST)));
                 float dA = Vec3.Len(Vec3.TorusDelta(gs.Rival.Pos, gA));
                 float dB = Vec3.Len(Vec3.TorusDelta(gs.Rival.Pos, gB));
-                target   = dA <= dB ? gA : gB;
+                target       = dA <= dB ? gA : gB;
+                arrivalSpeed = GATE_ARRIVE;
             }
 
-            Vec3 toTarget = Vec3.TorusDelta(gs.Rival.Pos, target);
-            if (Vec3.Len(toTarget) < 0.001f) toTarget = toRing;
-            Vec3 desiredVel = Vec3.Scale(Vec3.Norm(toTarget), C.RIVAL_MAX_SPEED);
-            Vec3 velError   = Vec3.Sub(desiredVel, gs.Rival.Vel);
-            float errLen    = Vec3.Len(velError);
+            Vec3  toTarget = Vec3.TorusDelta(gs.Rival.Pos, target);
+            float tgtDist  = Vec3.Len(toTarget);
+            if (tgtDist < 0.001f) toTarget = toRing;
+
+            // ---- 運動学的速度上限 ----
+            // この距離から EFF_DECEL で減速して arrivalSpeed に届くための最大速度
+            float vMax        = MathF.Sqrt(arrivalSpeed * arrivalSpeed + 2f * EFF_DECEL * tgtDist);
+            float targetSpeed = MathF.Min(C.RIVAL_MAX_SPEED, vMax);
+
+            Vec3  desiredVel = Vec3.Scale(Vec3.Norm(toTarget), targetSpeed);
+            Vec3  velError   = Vec3.Sub(desiredVel, gs.Rival.Vel);
+            float errLen     = Vec3.Len(velError);
 
             if (errLen > 1f)
             {
-                Vec3 thrustDir = Vec3.Scale(velError, 1f / errLen);
-                Vec3 cross     = Vec3.Cross(gs.Rival.Fwd, thrustDir);
-                float crossLen = Vec3.Len(cross);
-                float alignDot = Vec3.Dot(gs.Rival.Fwd, thrustDir);
+                Vec3  thrustDir = Vec3.Scale(velError, 1f / errLen);
+                Vec3  cross     = Vec3.Cross(gs.Rival.Fwd, thrustDir);
+                float crossLen  = Vec3.Len(cross);
+                float alignDot  = Vec3.Dot(gs.Rival.Fwd, thrustDir);
 
-                // Fwd をスラスト方向へ回転
+                // 船首を velError 方向へ回転
                 if (crossLen > 0.001f)
                 {
-                    Vec3 rotAxis   = Vec3.Scale(cross, 1f / crossLen);
+                    Vec3  rotAxis  = Vec3.Scale(cross, 1f / crossLen);
                     float maxAngle = MathF.Asin(MathF.Min(crossLen, 1f));
                     float rotAmt   = MathF.Min(maxAngle, C.ROTATION_SPEED * dt);
                     gs.Rival.Fwd   = Vec3.Norm(Vec3.Rotate(gs.Rival.Fwd, rotAxis, rotAmt));
@@ -360,14 +381,18 @@ internal static unsafe class Game
                 }
                 else if (alignDot < -0.999f)
                 {
-                    // 完全逆方向: Up 軸で強制回転
                     gs.Rival.Fwd   = Vec3.Norm(Vec3.Rotate(gs.Rival.Fwd, gs.Rival.Up,
                                          C.ROTATION_SPEED * dt));
                     gs.Rival.Fuel -= C.FUEL_ROTATE * dt;
                 }
 
-                // ほぼ向いていて最大速度未満ならスラスター噴射
-                if (alignDot > 0.7f && Vec3.Len(gs.Rival.Vel) < C.RIVAL_MAX_SPEED)
+                // スラスター噴射:
+                //   加速が必要 (速度不足)  → alignDot > 0.7 かつ速度上限未満なら前向きに噴射
+                //   減速が必要 (速度超過)  → velError が後ろ向きなので船首も後ろ向きになり
+                //                            alignDot > 0.7 で後ろ向きに噴射 → 能動減速
+                float curSpeed  = Vec3.Len(gs.Rival.Vel);
+                bool  needDecel = curSpeed > targetSpeed + 2f;
+                if (alignDot > 0.7f && (needDecel || curSpeed < C.RIVAL_MAX_SPEED))
                 {
                     gs.Rival.Vel   = Vec3.Add(gs.Rival.Vel,
                                          Vec3.Scale(gs.Rival.Fwd, C.MAIN_ACCEL * dt));
