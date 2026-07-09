@@ -508,16 +508,17 @@ internal static class AudioSystem
         }
     }
 
-    // 炸裂音: 質量弾命中時の鋭い爆発 (短め・金属的)
+    // 炸裂音: 質量弾命中・敵機爆散
+    // 低周波ブーム(65Hz) + 超重LPFノイズ(α=0.22) で「ドカン」感
+    // スラスター(α=0.65 中程度LPF)とは周波数帯が明確に異なる
     public static void PlayBulletExplosion()
     {
         if (s_effectStream == IntPtr.Zero) return;
         ClearAudioStream(s_effectStream);
-        const int   SR    = 22050;
-        const float DUR   = 0.40f;
-        const float DECAY = 10.0f;
+        const int   SR  = 22050;
+        const float DUR = 0.55f;
         int total = (int)(SR * DUR);
-        float lpf = 0.0f, phase = 0f;
+        float lpf = 0f;
         float[] buf = new float[512];
         for (int pushed = 0; pushed < total; )
         {
@@ -526,12 +527,14 @@ internal static class AudioSystem
             for (int i = 0; i < batch; i++)
             {
                 float t   = (float)(pushed + i) / SR;
-                float env = MathF.Exp(-DECAY * t);
-                float r   = ((float)Random.Shared.NextDouble()) * 2.0f - 1.0f;
-                lpf = 0.40f * r + 0.60f * lpf;
-                float metallic = MathF.Sin(phase * 2f * MathF.PI);
-                phase += 600f / SR; if (phase >= 1f) phase -= 1f;
-                buf[i] = (lpf * 0.60f + metallic * 0.40f) * env * 0.65f;
+                // 二段エンベロープ: 鋭い立ち上がり + ゆっくり減衰する残響
+                float env = MathF.Exp(-14f * t) * 0.65f + MathF.Exp(-4f * t) * 0.35f;
+                // 超重LPFノイズ (スラスターのα=0.65 より遥かに低域寄り)
+                float r = ((float)Random.Shared.NextDouble()) * 2f - 1f;
+                lpf = 0.22f * r + 0.78f * lpf;
+                // 低周波ブーム音 (65Hz → チャイムにならない深みのある音)
+                float boom = MathF.Sin(t * 65f * 2f * MathF.PI);
+                buf[i] = (lpf * 0.50f + boom * 0.50f) * env * 0.88f;
             }
             PushFloats(s_effectStream, buf, batch);
             pushed += batch;
