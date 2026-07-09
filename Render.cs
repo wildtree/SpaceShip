@@ -796,8 +796,8 @@ internal static class Renderer
 
                 if (rem)
                 {
-                    // 残りリング: 金色塗りつぶし + 輝くアウトライン
-                    Gl.Color3(1.0f, 0.82f, 0.08f);
+                    // 残りリング: 暗めの緑で塗りつぶし + やや明るいアウトライン
+                    Gl.Color3(0.12f, 0.45f, 0.15f);
                     Gl.Begin(PrimitiveType.TriangleFan);
                     Gl.Vertex2(cx, iy);
                     for (int s = 0; s <= ISEG; s++)
@@ -807,7 +807,7 @@ internal static class Renderer
                     }
                     Gl.End();
                     Gl.LineWidth(1.5f);
-                    Gl.Color3(1.0f, 0.95f, 0.55f);
+                    Gl.Color3(0.30f, 0.70f, 0.35f);
                     Gl.Begin(PrimitiveType.LineLoop);
                     for (int s = 0; s < ISEG; s++)
                     {
@@ -819,8 +819,8 @@ internal static class Renderer
                 }
                 else
                 {
-                    // 通過済み: 暗い緑のアウトラインのみ
-                    Gl.Color3(0.20f, 0.32f, 0.20f);
+                    // 通過済み: 暗いアウトラインのみ
+                    Gl.Color3(0.15f, 0.22f, 0.15f);
                     Gl.Begin(PrimitiveType.LineLoop);
                     for (int s = 0; s < ISEG; s++)
                     {
@@ -830,12 +830,6 @@ internal static class Renderer
                     Gl.End();
                 }
             }
-
-            // 残数を大きく右に表示 (縦中央揃え)
-            float numCw = cw * 2.2f, numCh = ch * 2.2f;
-            float numX  = sx + (N-1)*SP + IR + 10;
-            Gl.Color3(1.0f, 0.88f, 0.15f);
-            DrawString(numX, iy - numCh * 0.5f, numCw, numCh, remaining.ToString());
         }
 
         // スコアポップアップ (弾命中・ライバルリング通過)
