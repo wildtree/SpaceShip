@@ -272,11 +272,11 @@ internal static class Renderer
                            raw.Y + dy * C.SPACE_SIZE,
                            raw.Z + dz * C.SPACE_SIZE);
             if (Vec3.Len(rel) > drawDist) continue;
-            RenderRivalShipAt(rel, rival.Fwd, rival.Up);
+            RenderRivalShipAt(rel, rival.Fwd, rival.Up, rival.Fuel);
         }
     }
 
-    private static void RenderRivalShipAt(Vec3 rel, Vec3 fwd, Vec3 up)
+    private static void RenderRivalShipAt(Vec3 rel, Vec3 fwd, Vec3 up, float fuel)
     {
         Vec3 right = Vec3.Norm(Vec3.Cross(fwd, up));
         Vec3 L(float f, float r, float u) => new Vec3(
@@ -285,8 +285,15 @@ internal static class Renderer
             rel.Z + fwd.Z * f + right.Z * r + up.Z * u);
         void V(Vec3 v) { Gl.Vertex3(v.X, v.Y, v.Z); }
 
+        // 燃料残量に応じた色: 緑 → 黄 → 赤
+        float ff = MathF.Max(0f, fuel / C.INITIAL_FUEL);
+        float cr, cg, cb;
+        if      (ff > 0.5f) { cr = 0.35f; cg = 1.00f; cb = 0.35f; } // 緑
+        else if (ff > 0.1f) { cr = 1.00f; cg = 0.85f; cb = 0.10f; } // 黄
+        else                { cr = 1.00f; cg = 0.25f; cb = 0.25f; } // 赤
+
         Gl.LineWidth(1.5f);
-        Gl.Color3(1.0f, 0.35f, 0.35f); // 赤
+        Gl.Color3(cr, cg, cb);
         Gl.Begin(PrimitiveType.Lines);
 
         // 胴体: 4本の縦通材 (-10 ≤ f ≤ +10, ±3 right, ±2 up)

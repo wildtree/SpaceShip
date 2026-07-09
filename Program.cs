@@ -258,6 +258,7 @@ internal static unsafe class Game
         gs.Rival.Fwd     = Vec3.Norm(Vec3.TorusDelta(pos, gs.Ring.Pos));
         Vec3 arb = (MathF.Abs(gs.Rival.Fwd.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
         gs.Rival.Up      = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(gs.Rival.Fwd, arb)), gs.Rival.Fwd));
+        gs.Rival.Fuel         = C.INITIAL_FUEL;
         gs.Rival.Active       = true;
         gs.Rival.RespawnTimer = 0f;
     }
@@ -278,7 +279,7 @@ internal static unsafe class Game
         return Vec3.Len(inPlane) <= gs.Ring.Radius;
     }
 
-    // ライバル機 AI 更新・移動・リング通過判定
+    // ライバル機 AI 更新・物理演算・リング通過判定
     private static void UpdateRival(GameState gs, float dt)
     {
         if (!gs.Rival.Active)
@@ -288,16 +289,73 @@ internal static unsafe class Game
             return;
         }
 
-        // AI: 常にリングへ直進
-        Vec3 toRing = Vec3.TorusDelta(gs.Rival.Pos, gs.Ring.Pos);
-        float dist  = Vec3.Len(toRing);
-        if (dist > 0.001f)
+        // 中性子星重力 (自機と同じ)
+        if (gs.HasNeutronStar)
         {
-            Vec3 dir = Vec3.Scale(toRing, 1f / dist);
-            gs.Rival.Vel = Vec3.Scale(dir, C.RIVAL_MAX_SPEED);
-            gs.Rival.Fwd = dir;
-            Vec3 arb = (MathF.Abs(dir.Y) < 0.9f) ? new Vec3(0, 1, 0) : new Vec3(1, 0, 0);
-            gs.Rival.Up  = Vec3.Norm(Vec3.Cross(Vec3.Norm(Vec3.Cross(dir, arb)), dir));
+            Vec3 nsDelta = Vec3.TorusDelta(gs.Rival.Pos, gs.NeutronStarPos);
+            float nsDist = Vec3.Len(nsDelta);
+            if (nsDist > 0.001f)
+            {
+                float r    = nsDist / 100f;
+                float gAcc = 36f / (r * r);
+                gs.Rival.Vel = Vec3.Add(gs.Rival.Vel,
+                    Vec3.Scale(Vec3.Norm(nsDelta), gAcc * dt));
+            }
+        }
+
+        // AI: 目標速度 = リング方向へ RIVAL_MAX_SPEED
+        //     速度誤差を解消するよう向きを変えてスラスター噴射 (ブレーキなし・ハードモード相当)
+        Vec3 toRing    = Vec3.TorusDelta(gs.Rival.Pos, gs.Ring.Pos);
+        float ringDist = Vec3.Len(toRing);
+        if (ringDist > 0.001f)
+        {
+            Vec3 desiredVel = Vec3.Scale(Vec3.Norm(toRing), C.RIVAL_MAX_SPEED);
+            Vec3 velError   = Vec3.Sub(desiredVel, gs.Rival.Vel);
+            float errLen    = Vec3.Len(velError);
+
+            if (errLen > 1f)
+            {
+                Vec3 thrustDir = Vec3.Scale(velError, 1f / errLen);
+                Vec3 cross     = Vec3.Cross(gs.Rival.Fwd, thrustDir);
+                float crossLen = Vec3.Len(cross);
+                float alignDot = Vec3.Dot(gs.Rival.Fwd, thrustDir);
+
+                // Fwd をスラスト方向へ回転
+                if (crossLen > 0.001f)
+                {
+                    Vec3 rotAxis   = Vec3.Scale(cross, 1f / crossLen);
+                    float maxAngle = MathF.Asin(MathF.Min(crossLen, 1f));
+                    float rotAmt   = MathF.Min(maxAngle, C.ROTATION_SPEED * dt);
+                    gs.Rival.Fwd   = Vec3.Norm(Vec3.Rotate(gs.Rival.Fwd, rotAxis, rotAmt));
+                    Vec3 rgt       = Vec3.Norm(Vec3.Cross(gs.Rival.Fwd, gs.Rival.Up));
+                    gs.Rival.Up    = Vec3.Norm(Vec3.Cross(rgt, gs.Rival.Fwd));
+                    gs.Rival.Fuel -= C.FUEL_ROTATE * dt;
+                }
+                else if (alignDot < -0.999f)
+                {
+                    // 完全逆方向: Up 軸で強制回転
+                    gs.Rival.Fwd   = Vec3.Norm(Vec3.Rotate(gs.Rival.Fwd, gs.Rival.Up,
+                                         C.ROTATION_SPEED * dt));
+                    gs.Rival.Fuel -= C.FUEL_ROTATE * dt;
+                }
+
+                // ほぼ向いていて最大速度未満ならスラスター噴射
+                if (alignDot > 0.7f && Vec3.Len(gs.Rival.Vel) < C.RIVAL_MAX_SPEED)
+                {
+                    gs.Rival.Vel   = Vec3.Add(gs.Rival.Vel,
+                                         Vec3.Scale(gs.Rival.Fwd, C.MAIN_ACCEL * dt));
+                    gs.Rival.Fuel -= C.FUEL_MAIN * dt;
+                }
+            }
+        }
+
+        // 燃料切れ → 自爆・リスポーン待ち
+        if (gs.Rival.Fuel <= 0f)
+        {
+            gs.Rival.Active       = false;
+            gs.Rival.RespawnTimer = C.RIVAL_RESPAWN_TIME;
+            AudioSystem.PlayBulletExplosion();
+            return;
         }
 
         gs.Rival.PrevPos = gs.Rival.Pos;

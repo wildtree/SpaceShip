@@ -137,6 +137,7 @@ internal struct RivalShip
     public Vec3  Vel;
     public Vec3  Fwd;
     public Vec3  Up;
+    public float Fuel;          // 燃料残量 (0で自爆)
 }
 
 // ==================== Bullet ====================
