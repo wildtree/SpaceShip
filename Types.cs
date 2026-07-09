@@ -42,7 +42,7 @@ internal static class C
     public const float DOCK_MAX_SPEED   = 40.0f;  // ドッキング成功の最大速度
 
     // ライバル機・質量弾
-    public const float RIVAL_MAX_SPEED      = 500.0f;
+    public const float RIVAL_MAX_SPEED      = 100.0f;
     public const float RIVAL_RADIUS         = 8.0f;
     public const float RIVAL_RESPAWN_TIME   = 5.0f;
     public const int   RIVAL_DESTROY_SCORE  = 500;
